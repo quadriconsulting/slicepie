@@ -1778,6 +1778,82 @@ function approveContribution(pendingRowNum, skipHighValueCheck = false, bypassRe
     pendingSheet.getRange(rowNum, colMap.Approvers + 1).setValue(normalizedApprovers);
     const approvers = mergedApprovers;
 
+    // ========================================================================
+    // CR-01: RESERVE DECISION AND CHECK FOR CONCURRENT MASTER_WRITTEN
+    // ========================================================================
+    
+    // CR-01: Step 1 - Reserve decision first
+    const reserveResult = reserveDecision_(requestId, rowNum, 'APPROVE', actor);
+    Logger.log(`[approveContribution] Decision reserved: ${requestId}, state=${reserveResult.state}`);
+    
+    // CR-01: Step 2 - Re-fetch canonical decision to detect concurrent writes
+    const canonicalDecision = getDecisionByRequestId_(requestId);
+    if (!canonicalDecision) {
+      throw new Error(`Decision not found after reservation: ${requestId}`);
+    }
+    
+    // CR-01: Step 3 - If already MASTER_WRITTEN, validate pointers and skip
+    if (canonicalDecision.state === 'MASTER_WRITTEN') {
+      Logger.log(`[approveContribution] Detected MASTER_WRITTEN state, validating pointers...`);
+      
+      // CR-03: Validate master pointers before skipping
+      const validation = validateMasterPointers_(
+        canonicalDecision.masterRowNum,
+        canonicalDecision.masterRowSignature
+      );
+      
+      if (!validation.isValid) {
+        // CR-03: Invalid pointers - mark FAILED, reset, and retry
+        Logger.log(`[approveContribution] Pointer validation failed: ${validation.reason}`);
+        
+        pendingSheet.getRange(rowNum, colMap.State + 1).setValue('FAILED');
+        pendingSheet.getRange(rowNum, colMap.Notes + 1).setValue(`Master pointer validation failed: ${validation.reason}`);
+        
+        logAuditEvent_('MASTER_POINTER_VALIDATION_FAILED', actor, {
+          requestId: requestId,
+          pendingRow: rowNum,
+          reason: validation.reason,
+          masterRowNum: canonicalDecision.masterRowNum,
+          masterRowSignature: canonicalDecision.masterRowSignature
+        });
+        
+        // CR-03: Reset state to PENDING and clear master pointers for retry
+        pendingSheet.getRange(rowNum, colMap.State + 1).setValue('PENDING');
+        pendingSheet.getRange(rowNum, colMap.MasterRowNum + 1).setValue('');
+        pendingSheet.getRange(rowNum, colMap.MasterRowSignature + 1).setValue('');
+        
+        logAuditEvent_('RETRY_APPROVAL_AFTER_VALIDATION_FAILURE', actor, {
+          requestId: requestId,
+          pendingRow: rowNum
+        });
+        
+        Logger.log(`[approveContribution] State reset to PENDING, proceeding with retry (master write)...`);
+        // Fall through to normal master write flow below
+      } else {
+        // CR-01: Valid pointers - skip master write and return existing data
+        Logger.log(`[approveContribution] Pointers valid, skipping master write`);
+        
+        logAuditEvent_('MASTER_WRITE_SKIPPED_ALREADY_WRITTEN', actor, {
+          requestId: requestId,
+          pendingRow: rowNum,
+          masterRowNum: canonicalDecision.masterRowNum,
+          masterRowSignature: canonicalDecision.masterRowSignature
+        });
+        
+        return {
+          success: true,
+          skipped: true,
+          contributorKey: contributorKey,
+          slicesAwarded: slicesAwarded,
+          masterRowNum: canonicalDecision.masterRowNum,
+          masterRowSignature: canonicalDecision.masterRowSignature
+        };
+      }
+    }
+    
+    // ========================================================================
+    // NORMAL MASTER WRITE FLOW (if not skipped above)
+    // ========================================================================
     
     // Compute decision signature
     const decisionTimestamp = new Date();
@@ -1819,6 +1895,11 @@ function approveContribution(pendingRowNum, skipHighValueCheck = false, bypassRe
       evidenceURL,
       notes
     );
+    
+    // CR-01: Mark decision as MASTER_WRITTEN with pointers
+    pendingSheet.getRange(rowNum, colMap.State + 1).setValue('MASTER_WRITTEN');
+    pendingSheet.getRange(rowNum, colMap.MasterRowNum + 1).setValue(result.masterRowNum);
+    pendingSheet.getRange(rowNum, colMap.MasterRowSignature + 1).setValue(result.signature);
     
     logAuditEvent_('CONTRIBUTION_APPROVED', actor, {
       pendingRow: rowNum,
@@ -3034,19 +3115,22 @@ function reserveDecision_(requestId, pendingRow, decision, actor) {
   }
   
   // CR-02: Check for invalid timestamp (handle gracefully)
-  const existingTimestamp = rowData[colMap.ReservedTimestamp];
-  if (existingTimestamp && !(existingTimestamp instanceof Date) && isNaN(new Date(existingTimestamp).getTime())) {
+  // Must check Pending.Timestamp (submission timestamp), not ReservedTimestamp
+  const submissionTimestamp = rowData[colMap.Timestamp]; // Column 1
+  if (submissionTimestamp && !(submissionTimestamp instanceof Date) && isNaN(new Date(submissionTimestamp).getTime())) {
     // CR-02: Produce clean RESERVED record (not FAILED)
     const cleanTimestamp = new Date();
     pendingSheet.getRange(pendingRow, colMap.State + 1).setValue('RESERVED');
     pendingSheet.getRange(pendingRow, colMap.ReservedActor + 1).setValue(actor);
     pendingSheet.getRange(pendingRow, colMap.ReservedTimestamp + 1).setValue(cleanTimestamp);
+    // CR-02: Clear error fields (Notes)
+    pendingSheet.getRange(pendingRow, colMap.Notes + 1).setValue('');
     
     logAuditEvent_('DECISION_RESERVED_INVALID_TIMESTAMP_CLEANED', actor, {
       requestId: requestId,
       pendingRow: pendingRow,
       decision: decision,
-      invalidTimestamp: String(existingTimestamp)
+      invalidTimestamp: String(submissionTimestamp)
     });
     
     return {
@@ -3327,6 +3411,7 @@ function VERIFY_CR01_MasterWrittenSkip() {
 
 /**
  * VERIFY_CR02_InvalidTimestampReserved: Test invalid timestamp produces RESERVED, not FAILED.
+ * CR-02: Must check Pending.Timestamp (column 1), clear Notes field, set RESERVED state.
  */
 function VERIFY_CR02_InvalidTimestampReserved() {
   Logger.log('=== VERIFY_CR02_InvalidTimestampReserved START ===');
@@ -3335,12 +3420,13 @@ function VERIFY_CR02_InvalidTimestampReserved() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const pendingSheet = ss.getSheetByName('Pending');
     
-    // Setup: Create test row with invalid timestamp in ReservedTimestamp column
+    // Setup: Create test row with invalid timestamp in Pending.Timestamp (column 1)
+    // and error message in Notes field (column 10)
     const testRequestId = 'TEST_' + Utilities.getUuid();
     const testRow = [
-      new Date(), 'test@example.com', 'Test User', 'TIME', 2, 1000, 10, 20000,
-      'http://example.com', 'Test notes', 'PENDING', '', '', '', testRequestId,
-      'PENDING', null, '', '', 'INVALID_TIMESTAMP_STRING'
+      'INVALID_DATE_STRING', 'test@example.com', 'Test User', 'TIME', 2, 1000, 10, 20000,
+      'http://example.com', 'Previous error message', 'PENDING', '', '', '', testRequestId,
+      '', null, '', '', ''
     ];
     
     pendingSheet.appendRow(testRow);
@@ -3353,19 +3439,22 @@ function VERIFY_CR02_InvalidTimestampReserved() {
     // Verify: State should be RESERVED, not FAILED
     const colMap = getColMap_(pendingSheet, CONFIG.PENDING_SCHEMA);
     const finalState = pendingSheet.getRange(testRowNum, colMap.State + 1).getValue();
+    const finalNotes = pendingSheet.getRange(testRowNum, colMap.Notes + 1).getValue();
     
     const pass1 = reservation.state === 'RESERVED';
     const pass2 = String(finalState).trim().toUpperCase() === 'RESERVED';
     const pass3 = reservation.timestamp instanceof Date;
+    const pass4 = String(finalNotes).trim() === ''; // CR-02: Notes must be cleared
     
     // Cleanup
     pendingSheet.deleteRow(testRowNum);
     
-    const result = pass1 && pass2 && pass3;
+    const result = pass1 && pass2 && pass3 && pass4;
     Logger.log(`VERIFY_CR02_InvalidTimestampReserved: ${result ? 'PASS' : 'FAIL'}`);
     Logger.log(`  - reserveDecision_ returns RESERVED: ${pass1}`);
     Logger.log(`  - Sheet State is RESERVED: ${pass2}`);
     Logger.log(`  - Timestamp is valid Date: ${pass3}`);
+    Logger.log(`  - Notes field cleared: ${pass4}`);
     
     return result;
     
