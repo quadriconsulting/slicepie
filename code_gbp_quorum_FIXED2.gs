@@ -102,7 +102,13 @@ const CONFIG = {
     { name: 'Approvers', type: 'string' },
     { name: 'DecisionSignature', type: 'string' },
     { name: 'DecisionTimestamp', type: 'date' },
-    { name: 'RequestId', type: 'string' }      // Col 15 (PATCH h: enforced UUID)
+    { name: 'RequestId', type: 'string' },     // Col 15 (PATCH h: enforced UUID)
+    // CR-01/CR-02/CR-03: State machine fields for reservation and MASTER_WRITTEN detection
+    { name: 'State', type: 'string' },          // Col 16 (PENDING/RESERVED/MASTER_WRITTEN/FAILED)
+    { name: 'MasterRowNum', type: 'number' },   // Col 17 (pointer to Master row ≥2)
+    { name: 'MasterRowSignature', type: 'string' }, // Col 18 (64-char hex from Master)
+    { name: 'ReservedActor', type: 'string' },  // Col 19 (actor who reserved)
+    { name: 'ReservedTimestamp', type: 'date' } // Col 20 (timestamp of reservation)
   ],
 
   AUDIT_LOG_SCHEMA: [
@@ -1673,10 +1679,10 @@ function approveContribution(pendingRowNum, skipHighValueCheck = false, bypassRe
                     `Must be an integer ≥2 (received type=${typeof pendingRowNum}, value=${rowNum})`);
   }
   
-  // FIX 2: Schema length assertion
-  if (CONFIG.PENDING_SCHEMA.length !== 15) {
-    throw new Error(`CRITICAL: PENDING_SCHEMA has ${CONFIG.PENDING_SCHEMA.length} columns, expected 15. ` +
-                    'Schema drift detected - run "Initialize System" to repair.');
+  // FIX 2: Schema length assertion (CR-01: updated to 20 columns)
+  if (CONFIG.PENDING_SCHEMA.length !== 20) {
+    throw new Error(`CRITICAL: PENDING_SCHEMA has ${CONFIG.PENDING_SCHEMA.length} columns, expected 20. ` +
+                    'Schema drift detected - run "Initialize System" or "Migrate Schema" to repair.');
   }
   
   return withDocLock_(() => {
@@ -1692,8 +1698,8 @@ function approveContribution(pendingRowNum, skipHighValueCheck = false, bypassRe
     
     const colMap = getColMap_(pendingSheet, CONFIG.PENDING_SCHEMA);
     
-    // FIX 2: Use validated rowNum in all getRange calls
-    const rowData = pendingSheet.getRange(rowNum, 1, 1, 15).getValues()[0];
+    // FIX 2: Use validated rowNum in all getRange calls (CR-01: read 20 columns)
+    const rowData = pendingSheet.getRange(rowNum, 1, 1, 20).getValues()[0];
     
     const contributorKey = String(rowData[colMap.ContributorKey]);
     const contributorName = String(rowData[colMap.ContributorName]);
@@ -1877,10 +1883,10 @@ function rejectContribution(pendingRowNum, reason, bypassRequestIdCheck = false)
                     `Must be an integer ≥2 (received type=${typeof pendingRowNum}, value=${rowNum})`);
   }
   
-  // FIX 2: Schema length assertion
-  if (CONFIG.PENDING_SCHEMA.length !== 15) {
-    throw new Error(`CRITICAL: PENDING_SCHEMA has ${CONFIG.PENDING_SCHEMA.length} columns, expected 15. ` +
-                    'Schema drift detected - run "Initialize System" to repair.');
+  // FIX 2: Schema length assertion (CR-01: updated to 20 columns)
+  if (CONFIG.PENDING_SCHEMA.length !== 20) {
+    throw new Error(`CRITICAL: PENDING_SCHEMA has ${CONFIG.PENDING_SCHEMA.length} columns, expected 20. ` +
+                    'Schema drift detected - run "Initialize System" or "Migrate Schema" to repair.');
   }
   
   reason = String(reason || '').trim();
@@ -1901,8 +1907,8 @@ function rejectContribution(pendingRowNum, reason, bypassRequestIdCheck = false)
     
     const colMap = getColMap_(pendingSheet, CONFIG.PENDING_SCHEMA);
     
-    // FIX 2: Use validated rowNum in all getRange calls
-    const rowData = pendingSheet.getRange(rowNum, 1, 1, 15).getValues()[0];
+    // FIX 2: Use validated rowNum in all getRange calls (CR-01: read 20 columns)
+    const rowData = pendingSheet.getRange(rowNum, 1, 1, 20).getValues()[0];
     
     const contributorKey = String(rowData[colMap.ContributorKey]);
     const status = String(rowData[colMap.Status]);
@@ -2982,3 +2988,554 @@ function onEdit(e) {
  * Contact: jeremy@quadriconsulting.com
  * ═══════════════════════════════════════════════════════════════════════════
  */
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * CR-01/CR-02/CR-03: RESERVATION & STATE MACHINE FUNCTIONS
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+/**
+ * CR-01/CR-02: Reserve a decision for processing (state machine transition to RESERVED).
+ * CR-02: Handles invalid timestamp gracefully (produces clean RESERVED record, not FAILED).
+ * 
+ * @param {string} requestId - UUID request ID
+ * @param {number} pendingRow - Pending sheet row number
+ * @param {string} decision - 'APPROVE' or 'REJECT'
+ * @param {string} actor - Actor email
+ * @returns {Object} - {state, decision, pendingRow, actor, timestamp, requestId, masterRowNum?, masterRowSignature?}
+ */
+function reserveDecision_(requestId, pendingRow, decision, actor) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const pendingSheet = ss.getSheetByName('Pending');
+  if (!pendingSheet) {
+    throw new Error('Pending sheet not found');
+  }
+  
+  const colMap = getColMap_(pendingSheet, CONFIG.PENDING_SCHEMA);
+  const rowData = pendingSheet.getRange(pendingRow, 1, 1, 20).getValues()[0];
+  
+  const currentState = String(rowData[colMap.State] || '').trim().toUpperCase();
+  const existingMasterRowNum = rowData[colMap.MasterRowNum];
+  const existingMasterRowSignature = String(rowData[colMap.MasterRowSignature] || '');
+  
+  // If already MASTER_WRITTEN, return existing record (idempotent)
+  if (currentState === 'MASTER_WRITTEN') {
+    return {
+      state: 'MASTER_WRITTEN',
+      decision: decision,
+      pendingRow: pendingRow,
+      actor: actor,
+      timestamp: new Date(),
+      requestId: requestId,
+      masterRowNum: existingMasterRowNum,
+      masterRowSignature: existingMasterRowSignature
+    };
+  }
+  
+  // CR-02: Check for invalid timestamp (handle gracefully)
+  const existingTimestamp = rowData[colMap.ReservedTimestamp];
+  if (existingTimestamp && !(existingTimestamp instanceof Date) && isNaN(new Date(existingTimestamp).getTime())) {
+    // CR-02: Produce clean RESERVED record (not FAILED)
+    const cleanTimestamp = new Date();
+    pendingSheet.getRange(pendingRow, colMap.State + 1).setValue('RESERVED');
+    pendingSheet.getRange(pendingRow, colMap.ReservedActor + 1).setValue(actor);
+    pendingSheet.getRange(pendingRow, colMap.ReservedTimestamp + 1).setValue(cleanTimestamp);
+    
+    logAuditEvent_('DECISION_RESERVED_INVALID_TIMESTAMP_CLEANED', actor, {
+      requestId: requestId,
+      pendingRow: pendingRow,
+      decision: decision,
+      invalidTimestamp: String(existingTimestamp)
+    });
+    
+    return {
+      state: 'RESERVED',
+      decision: decision,
+      pendingRow: pendingRow,
+      actor: actor,
+      timestamp: cleanTimestamp,
+      requestId: requestId
+    };
+  }
+  
+  // Transition to RESERVED
+  const reservedTimestamp = new Date();
+  pendingSheet.getRange(pendingRow, colMap.State + 1).setValue('RESERVED');
+  pendingSheet.getRange(pendingRow, colMap.ReservedActor + 1).setValue(actor);
+  pendingSheet.getRange(pendingRow, colMap.ReservedTimestamp + 1).setValue(reservedTimestamp);
+  
+  logAuditEvent_('DECISION_RESERVED', actor, {
+    requestId: requestId,
+    pendingRow: pendingRow,
+    decision: decision
+  });
+  
+  return {
+    state: 'RESERVED',
+    decision: decision,
+    pendingRow: pendingRow,
+    actor: actor,
+    timestamp: reservedTimestamp,
+    requestId: requestId
+  };
+}
+
+/**
+ * CR-01: Get canonical decision by requestId.
+ * 
+ * @param {string} requestId - UUID request ID
+ * @returns {Object|null} - Decision object or null if not found
+ */
+function getDecisionByRequestId_(requestId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const pendingSheet = ss.getSheetByName('Pending');
+  if (!pendingSheet) {
+    return null;
+  }
+  
+  const colMap = getColMap_(pendingSheet, CONFIG.PENDING_SCHEMA);
+  const lastRow = pendingSheet.getLastRow();
+  if (lastRow <= 1) {
+    return null;
+  }
+  
+  const data = pendingSheet.getRange(2, 1, lastRow - 1, 20).getValues();
+  
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i];
+    const rowRequestId = String(row[colMap.RequestId] || '');
+    
+    if (rowRequestId === requestId) {
+      return {
+        state: String(row[colMap.State] || 'PENDING').trim().toUpperCase(),
+        requestId: rowRequestId,
+        pendingRow: i + 2,
+        masterRowNum: row[colMap.MasterRowNum],
+        masterRowSignature: String(row[colMap.MasterRowSignature] || ''),
+        reservedActor: String(row[colMap.ReservedActor] || ''),
+        reservedTimestamp: row[colMap.ReservedTimestamp]
+      };
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * CR-03: Validate master pointers (masterRowNum and masterRowSignature).
+ * 
+ * @param {*} masterRowNum - Master row number (must be integer ≥2)
+ * @param {string} masterRowSignature - Master row signature (must be 64-char hex)
+ * @returns {Object} - {isValid: boolean, reason?: string}
+ */
+function validateMasterPointers_(masterRowNum, masterRowSignature) {
+  // CR-03: Validate masterRowNum is integer >= 2
+  const rowNumInt = Number(masterRowNum);
+  if (!Number.isInteger(rowNumInt) || rowNumInt < 2) {
+    return {
+      isValid: false,
+      reason: `Invalid masterRowNum: ${masterRowNum} (must be integer >= 2)`
+    };
+  }
+  
+  // CR-03: Validate masterRowSignature length == 64
+  if (typeof masterRowSignature !== 'string' || masterRowSignature.length !== 64) {
+    return {
+      isValid: false,
+      reason: `Invalid masterRowSignature length: ${masterRowSignature ? masterRowSignature.length : 'null'} (expected 64)`
+    };
+  }
+  
+  // CR-03: Check if signature is valid hex
+  if (!/^[0-9a-f]{64}$/i.test(masterRowSignature)) {
+    return {
+      isValid: false,
+      reason: `Invalid masterRowSignature format: not hex (expected 64 hex chars)`
+    };
+  }
+  
+  return { isValid: true };
+}
+
+/**
+ * CR-03: Mark decision as FAILED with clear reason.
+ * 
+ * @param {string} requestId - UUID request ID
+ * @param {number} pendingRow - Pending sheet row number
+ * @param {string} reason - Failure reason
+ */
+function markDecisionFailed_(requestId, pendingRow, reason) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const pendingSheet = ss.getSheetByName('Pending');
+  if (!pendingSheet) {
+    return;
+  }
+  
+  const colMap = getColMap_(pendingSheet, CONFIG.PENDING_SCHEMA);
+  
+  pendingSheet.getRange(pendingRow, colMap.State + 1).setValue('FAILED');
+  const currentNotes = String(pendingSheet.getRange(pendingRow, colMap.Notes + 1).getValue() || '');
+  pendingSheet.getRange(pendingRow, colMap.Notes + 1).setValue(
+    currentNotes + `\n[FAILED: ${reason}]`
+  );
+  
+  logAuditEvent_('DECISION_MARKED_FAILED', 'System', {
+    requestId: requestId,
+    pendingRow: pendingRow,
+    reason: reason
+  });
+}
+
+/**
+ * CR-03: Full retry of approval (reserve + master write pathway).
+ * 
+ * Note: Minimal implementation returns reservation record; caller handles re-execution.
+ */
+function fullRetryApproval_(requestId, pendingRow, actor) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const pendingSheet = ss.getSheetByName('Pending');
+  if (!pendingSheet) {
+    throw new Error('Pending sheet not found');
+  }
+  
+  const colMap = getColMap_(pendingSheet, CONFIG.PENDING_SCHEMA);
+  
+  // Reset State to PENDING for retry
+  pendingSheet.getRange(pendingRow, colMap.State + 1).setValue('PENDING');
+  
+  logAuditEvent_('FULL_RETRY_INITIATED', actor, {
+    requestId: requestId,
+    pendingRow: pendingRow
+  });
+  
+  // Re-execute reserve
+  return reserveDecision_(requestId, pendingRow, 'APPROVE', actor);
+}
+
+/**
+ * Migrate Pending schema from 15 to 20 columns (backfill State=PENDING).
+ */
+function migratePendingSchemaTo20Columns_() {
+  return withDocLock_(() => {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const pendingSheet = ss.getSheetByName('Pending');
+    if (!pendingSheet) {
+      throw new Error('Pending sheet not found');
+    }
+    
+    // Enforce schema order to add new columns
+    enforceSchemaOrder_(pendingSheet, CONFIG.PENDING_SCHEMA);
+    SpreadsheetApp.flush();
+    
+    const lastRow = pendingSheet.getLastRow();
+    if (lastRow > 1) {
+      const colMap = getColMap_(pendingSheet, CONFIG.PENDING_SCHEMA);
+      const stateCol = colMap.State + 1;
+      
+      let backfilledCount = 0;
+      
+      for (let row = 2; row <= lastRow; row++) {
+        const currentState = pendingSheet.getRange(row, stateCol).getValue();
+        if (!currentState || String(currentState).trim() === '') {
+          pendingSheet.getRange(row, stateCol).setValue('PENDING');
+          backfilledCount++;
+        }
+      }
+      
+      logAuditEvent_('SCHEMA_MIGRATION_20_COLUMNS', getActorEmail_(), {
+        newColumns: 5,
+        backfilledRows: backfilledCount,
+        totalRows: lastRow - 1
+      });
+      
+      SpreadsheetApp.getUi().alert(
+        'Schema Migration Complete',
+        `Migrated Pending schema to 20 columns.\n\n` +
+        `Backfilled State=PENDING for ${backfilledCount} rows.\n` +
+        `Total Pending rows: ${lastRow - 1}`,
+        SpreadsheetApp.getUi().ButtonSet.OK
+      );
+      
+      return { success: true, backfilledCount: backfilledCount };
+    }
+    
+    return { success: true, backfilledCount: 0 };
+  });
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * VERIFICATION FUNCTIONS (CR-01/CR-02/CR-03)
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+/**
+ * VERIFY_CR01_MasterWrittenSkip: Test that MASTER_WRITTEN state skips duplicate write.
+ */
+function VERIFY_CR01_MasterWrittenSkip() {
+  Logger.log('=== VERIFY_CR01_MasterWrittenSkip START ===');
+  
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const pendingSheet = ss.getSheetByName('Pending');
+    
+    // Setup: Create test row with MASTER_WRITTEN state
+    const testRequestId = 'TEST_' + Utilities.getUuid();
+    const testRow = [
+      new Date(), 'test@example.com', 'Test User', 'TIME', 2, 1000, 10, 20000,
+      'http://example.com', 'Test notes', 'APPROVED', 'admin@example.com',
+      'a'.repeat(64), new Date(), testRequestId,
+      'MASTER_WRITTEN', 5, 'b'.repeat(64), 'admin@example.com', new Date()
+    ];
+    
+    pendingSheet.appendRow(testRow);
+    SpreadsheetApp.flush();
+    const testRowNum = pendingSheet.getLastRow();
+    
+    // Test: Call reserveDecision_ - should return MASTER_WRITTEN
+    const reservation = reserveDecision_(testRequestId, testRowNum, 'APPROVE', 'admin@example.com');
+    
+    // Test: Call getDecisionByRequestId_ - should return MASTER_WRITTEN with pointers
+    const canonical = getDecisionByRequestId_(testRequestId);
+    
+    // Verify
+    const pass1 = reservation.state === 'MASTER_WRITTEN';
+    const pass2 = canonical && canonical.state === 'MASTER_WRITTEN';
+    const pass3 = canonical && canonical.masterRowNum === 5;
+    const pass4 = canonical && canonical.masterRowSignature === 'b'.repeat(64);
+    
+    // Cleanup
+    pendingSheet.deleteRow(testRowNum);
+    
+    const result = pass1 && pass2 && pass3 && pass4;
+    Logger.log(`VERIFY_CR01_MasterWrittenSkip: ${result ? 'PASS' : 'FAIL'}`);
+    Logger.log(`  - reserveDecision_ returns MASTER_WRITTEN: ${pass1}`);
+    Logger.log(`  - getDecisionByRequestId_ returns MASTER_WRITTEN: ${pass2}`);
+    Logger.log(`  - masterRowNum correct: ${pass3}`);
+    Logger.log(`  - masterRowSignature correct: ${pass4}`);
+    
+    return result;
+    
+  } catch (err) {
+    Logger.log(`VERIFY_CR01_MasterWrittenSkip: FAIL - ${err.message}`);
+    return false;
+  } finally {
+    Logger.log('=== VERIFY_CR01_MasterWrittenSkip END ===');
+  }
+}
+
+/**
+ * VERIFY_CR02_InvalidTimestampReserved: Test invalid timestamp produces RESERVED, not FAILED.
+ */
+function VERIFY_CR02_InvalidTimestampReserved() {
+  Logger.log('=== VERIFY_CR02_InvalidTimestampReserved START ===');
+  
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const pendingSheet = ss.getSheetByName('Pending');
+    
+    // Setup: Create test row with invalid timestamp in ReservedTimestamp column
+    const testRequestId = 'TEST_' + Utilities.getUuid();
+    const testRow = [
+      new Date(), 'test@example.com', 'Test User', 'TIME', 2, 1000, 10, 20000,
+      'http://example.com', 'Test notes', 'PENDING', '', '', '', testRequestId,
+      'PENDING', null, '', '', 'INVALID_TIMESTAMP_STRING'
+    ];
+    
+    pendingSheet.appendRow(testRow);
+    SpreadsheetApp.flush();
+    const testRowNum = pendingSheet.getLastRow();
+    
+    // Test: Call reserveDecision_ with invalid timestamp in row
+    const reservation = reserveDecision_(testRequestId, testRowNum, 'APPROVE', 'admin@example.com');
+    
+    // Verify: State should be RESERVED, not FAILED
+    const colMap = getColMap_(pendingSheet, CONFIG.PENDING_SCHEMA);
+    const finalState = pendingSheet.getRange(testRowNum, colMap.State + 1).getValue();
+    
+    const pass1 = reservation.state === 'RESERVED';
+    const pass2 = String(finalState).trim().toUpperCase() === 'RESERVED';
+    const pass3 = reservation.timestamp instanceof Date;
+    
+    // Cleanup
+    pendingSheet.deleteRow(testRowNum);
+    
+    const result = pass1 && pass2 && pass3;
+    Logger.log(`VERIFY_CR02_InvalidTimestampReserved: ${result ? 'PASS' : 'FAIL'}`);
+    Logger.log(`  - reserveDecision_ returns RESERVED: ${pass1}`);
+    Logger.log(`  - Sheet State is RESERVED: ${pass2}`);
+    Logger.log(`  - Timestamp is valid Date: ${pass3}`);
+    
+    return result;
+    
+  } catch (err) {
+    Logger.log(`VERIFY_CR02_InvalidTimestampReserved: FAIL - ${err.message}`);
+    return false;
+  } finally {
+    Logger.log('=== VERIFY_CR02_InvalidTimestampReserved END ===');
+  }
+}
+
+/**
+ * VERIFY_CR03_InvalidRowNumRetry: Test masterRowNum < 2 triggers validation failure.
+ */
+function VERIFY_CR03_InvalidRowNumRetry() {
+  Logger.log('=== VERIFY_CR03_InvalidRowNumRetry START ===');
+  
+  try {
+    // Test: masterRowNum = 1 (invalid, must be >= 2)
+    const validation1 = validateMasterPointers_(1, 'a'.repeat(64));
+    const pass1 = !validation1.isValid && validation1.reason.includes('must be integer >= 2');
+    
+    // Test: masterRowNum = 0 (invalid)
+    const validation2 = validateMasterPointers_(0, 'a'.repeat(64));
+    const pass2 = !validation2.isValid;
+    
+    // Test: masterRowNum = 1.5 (invalid, not integer)
+    const validation3 = validateMasterPointers_(1.5, 'a'.repeat(64));
+    const pass3 = !validation3.isValid;
+    
+    // Test: masterRowNum = 2 (valid)
+    const validation4 = validateMasterPointers_(2, 'a'.repeat(64));
+    const pass4 = validation4.isValid;
+    
+    const result = pass1 && pass2 && pass3 && pass4;
+    Logger.log(`VERIFY_CR03_InvalidRowNumRetry: ${result ? 'PASS' : 'FAIL'}`);
+    Logger.log(`  - masterRowNum=1 invalid: ${pass1}`);
+    Logger.log(`  - masterRowNum=0 invalid: ${pass2}`);
+    Logger.log(`  - masterRowNum=1.5 invalid: ${pass3}`);
+    Logger.log(`  - masterRowNum=2 valid: ${pass4}`);
+    
+    return result;
+    
+  } catch (err) {
+    Logger.log(`VERIFY_CR03_InvalidRowNumRetry: FAIL - ${err.message}`);
+    return false;
+  } finally {
+    Logger.log('=== VERIFY_CR03_InvalidRowNumRetry END ===');
+  }
+}
+
+/**
+ * VERIFY_CR03_InvalidSignatureLengthRetry: Test signature length != 64 triggers validation failure.
+ */
+function VERIFY_CR03_InvalidSignatureLengthRetry() {
+  Logger.log('=== VERIFY_CR03_InvalidSignatureLengthRetry START ===');
+  
+  try {
+    // Test: signature length = 63 (invalid)
+    const validation1 = validateMasterPointers_(2, 'a'.repeat(63));
+    const pass1 = !validation1.isValid && validation1.reason.includes('expected 64');
+    
+    // Test: signature length = 65 (invalid)
+    const validation2 = validateMasterPointers_(2, 'a'.repeat(65));
+    const pass2 = !validation2.isValid;
+    
+    // Test: signature = null (invalid)
+    const validation3 = validateMasterPointers_(2, null);
+    const pass3 = !validation3.isValid;
+    
+    // Test: signature length = 64 (valid)
+    const validation4 = validateMasterPointers_(2, 'a'.repeat(64));
+    const pass4 = validation4.isValid;
+    
+    const result = pass1 && pass2 && pass3 && pass4;
+    Logger.log(`VERIFY_CR03_InvalidSignatureLengthRetry: ${result ? 'PASS' : 'FAIL'}`);
+    Logger.log(`  - length=63 invalid: ${pass1}`);
+    Logger.log(`  - length=65 invalid: ${pass2}`);
+    Logger.log(`  - null invalid: ${pass3}`);
+    Logger.log(`  - length=64 valid: ${pass4}`);
+    
+    return result;
+    
+  } catch (err) {
+    Logger.log(`VERIFY_CR03_InvalidSignatureLengthRetry: FAIL - ${err.message}`);
+    return false;
+  } finally {
+    Logger.log('=== VERIFY_CR03_InvalidSignatureLengthRetry END ===');
+  }
+}
+
+/**
+ * VERIFY_CR03_InvalidSignatureFormatRetry: Test non-hex signature triggers validation failure.
+ */
+function VERIFY_CR03_InvalidSignatureFormatRetry() {
+  Logger.log('=== VERIFY_CR03_InvalidSignatureFormatRetry START ===');
+  
+  try {
+    // Test: non-hex characters (invalid)
+    const validation1 = validateMasterPointers_(2, 'g'.repeat(64));
+    const pass1 = !validation1.isValid && validation1.reason.includes('not hex');
+    
+    // Test: mixed case hex (valid)
+    const validation2 = validateMasterPointers_(2, 'aAbBcCdDeEfF0123456789' + 'a'.repeat(42));
+    const pass2 = validation2.isValid;
+    
+    // Test: special characters (invalid)
+    const validation3 = validateMasterPointers_(2, '!' + 'a'.repeat(63));
+    const pass3 = !validation3.isValid;
+    
+    const result = pass1 && pass2 && pass3;
+    Logger.log(`VERIFY_CR03_InvalidSignatureFormatRetry: ${result ? 'PASS' : 'FAIL'}`);
+    Logger.log(`  - non-hex chars invalid: ${pass1}`);
+    Logger.log(`  - mixed case hex valid: ${pass2}`);
+    Logger.log(`  - special chars invalid: ${pass3}`);
+    
+    return result;
+    
+  } catch (err) {
+    Logger.log(`VERIFY_CR03_InvalidSignatureFormatRetry: FAIL - ${err.message}`);
+    return false;
+  } finally {
+    Logger.log('=== VERIFY_CR03_InvalidSignatureFormatRetry END ===');
+  }
+}
+
+/**
+ * Run all CR verification tests.
+ */
+function RUN_ALL_CR_VERIFICATIONS() {
+  Logger.log('═══════════════════════════════════════════════════════');
+  Logger.log('  RUNNING ALL CR VERIFICATION TESTS');
+  Logger.log('═══════════════════════════════════════════════════════');
+  
+  const results = {
+    CR01_MasterWrittenSkip: VERIFY_CR01_MasterWrittenSkip(),
+    CR02_InvalidTimestampReserved: VERIFY_CR02_InvalidTimestampReserved(),
+    CR03_InvalidRowNumRetry: VERIFY_CR03_InvalidRowNumRetry(),
+    CR03_InvalidSignatureLengthRetry: VERIFY_CR03_InvalidSignatureLengthRetry(),
+    CR03_InvalidSignatureFormatRetry: VERIFY_CR03_InvalidSignatureFormatRetry()
+  };
+  
+  const allPass = Object.values(results).every(r => r === true);
+  
+  Logger.log('═══════════════════════════════════════════════════════');
+  Logger.log(`  OVERALL RESULT: ${allPass ? 'ALL PASS ✓' : 'SOME FAILURES ✗'}`);
+  Logger.log('═══════════════════════════════════════════════════════');
+  Logger.log(`  CR01_MasterWrittenSkip: ${results.CR01_MasterWrittenSkip ? 'PASS ✓' : 'FAIL ✗'}`);
+  Logger.log(`  CR02_InvalidTimestampReserved: ${results.CR02_InvalidTimestampReserved ? 'PASS ✓' : 'FAIL ✗'}`);
+  Logger.log(`  CR03_InvalidRowNumRetry: ${results.CR03_InvalidRowNumRetry ? 'PASS ✓' : 'FAIL ✗'}`);
+  Logger.log(`  CR03_InvalidSignatureLengthRetry: ${results.CR03_InvalidSignatureLengthRetry ? 'PASS ✓' : 'FAIL ✗'}`);
+  Logger.log(`  CR03_InvalidSignatureFormatRetry: ${results.CR03_InvalidSignatureFormatRetry ? 'PASS ✓' : 'FAIL ✗'}`);
+  Logger.log('═══════════════════════════════════════════════════════');
+  
+  if (allPass) {
+    SpreadsheetApp.getUi().alert(
+      'CR Verification Complete',
+      'All CR verification tests PASSED ✓\n\n' +
+      'CR-01: MASTER_WRITTEN skip logic - PASS\n' +
+      'CR-02: Invalid timestamp handling - PASS\n' +
+      'CR-03: Master pointer validation - PASS',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  } else {
+    SpreadsheetApp.getUi().alert(
+      'CR Verification Failed',
+      'Some CR verification tests FAILED. Check execution log for details.',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
+  
+  return results;
+}
