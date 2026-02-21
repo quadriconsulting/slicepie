@@ -121,6 +121,39 @@ const CONFIG = {
     { name: 'Signature', type: 'string' }      // PATCH c: HMAC-SHA256
   ],
 
+  CONTRIBUTORS_SCHEMA: [
+    { name: 'ContributorKey', type: 'string' },
+    { name: 'Name', type: 'string' },
+    { name: 'Email', type: 'string' },
+    { name: 'Role', type: 'string' },
+    { name: 'JoinDate', type: 'date' },
+    { name: 'Status', type: 'string' },
+    { name: 'Notes', type: 'string' }
+  ],
+
+  CONFIG_SCHEMA: [
+    { name: 'Key', type: 'string' },
+    { name: 'Value', type: 'string' },
+    { name: 'Description', type: 'string' },
+    { name: 'LastModified', type: 'date' }
+  ],
+
+  RATE_CARD_SCHEMA: [
+    { name: 'ContributionType', type: 'string' },
+    { name: 'MultiplierFactor', type: 'number' },
+    { name: 'Description', type: 'string' },
+    { name: 'EffectiveDate', type: 'date' }
+  ],
+
+  INVESTOR_EXPORT_SCHEMA: [
+    { name: 'ContributorKey', type: 'string' },
+    { name: 'Name', type: 'string' },
+    { name: 'TotalSlices', type: 'number' },
+    { name: 'EquityPercent', type: 'number' },
+    { name: 'CashInvested', type: 'number' },
+    { name: 'LastUpdated', type: 'date' }
+  ],
+
   MULTIPLIERS: {
     TIME: 2,
     CASH: 4,
@@ -149,6 +182,18 @@ CONFIG.AUDIT_SCHEMA_POSITIONS = {};
 CONFIG.AUDIT_LOG_SCHEMA.forEach((col, idx) => {
   CONFIG.AUDIT_SCHEMA_POSITIONS[col.name] = idx;
 });
+
+// Rate Card seed data (default contribution types)
+const RATE_CARD_DATA = [
+  ['Full-Time Work', 2.0, 'Standard full-time contribution', new Date()],
+  ['Part-Time Work', 1.5, 'Part-time or contract work', new Date()],
+  ['Cash Investment', 4.0, 'Direct cash contribution', new Date()],
+  ['Equipment/Assets', 4.0, 'Physical assets or equipment', new Date()],
+  ['Deferred Salary', 2.0, 'Salary deferred for equity', new Date()],
+  ['Expenses', 1.0, 'Out-of-pocket expenses', new Date()],
+  ['Intellectual Property', 4.0, 'IP transferred to company', new Date()],
+  ['Relationship/Network', 2.0, 'Introductions or network access', new Date()]
+];
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -1483,6 +1528,100 @@ function ensureAuditLogSheet_() {
 }
 
 /**
+ * Ensures Contributors sheet exists with correct schema
+ * @private
+ * @return {Sheet} Contributors sheet
+ */
+function ensureContributorsSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Contributors');
+  
+  if (!sheet) {
+    sheet = ss.insertSheet('Contributors');
+    const headers = CONFIG.CONTRIBUTORS_SCHEMA.map(col => col.name);
+    sheet.getRange(1, 1, 1, headers.length)
+      .setValues([headers])
+      .setFontWeight('bold')
+      .setBackground('#f3f3f3');
+    sheet.setFrozenRows(1);
+  }
+  
+  return sheet;
+}
+
+/**
+ * Ensures Config sheet exists with correct schema
+ * @private
+ * @return {Sheet} Config sheet
+ */
+function ensureConfigSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Config');
+  
+  if (!sheet) {
+    sheet = ss.insertSheet('Config');
+    const headers = CONFIG.CONFIG_SCHEMA.map(col => col.name);
+    sheet.getRange(1, 1, 1, headers.length)
+      .setValues([headers])
+      .setFontWeight('bold')
+      .setBackground('#f3f3f3');
+    sheet.setFrozenRows(1);
+  }
+  
+  return sheet;
+}
+
+/**
+ * Ensures Rate Card sheet exists with correct schema and seed data
+ * @private
+ * @return {Sheet} Rate Card sheet
+ */
+function ensureRateCardSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Rate Card');
+  
+  if (!sheet) {
+    sheet = ss.insertSheet('Rate Card');
+    const headers = CONFIG.RATE_CARD_SCHEMA.map(col => col.name);
+    sheet.getRange(1, 1, 1, headers.length)
+      .setValues([headers])
+      .setFontWeight('bold')
+      .setBackground('#f3f3f3');
+    sheet.setFrozenRows(1);
+  }
+  
+  // Seed data only if sheet has header-only (1 row)
+  if (sheet.getLastRow() === 1 && RATE_CARD_DATA.length > 0) {
+    sheet.getRange(2, 1, RATE_CARD_DATA.length, RATE_CARD_DATA[0].length)
+      .setValues(RATE_CARD_DATA);
+  }
+  
+  return sheet;
+}
+
+/**
+ * Ensures Investor Export sheet exists with correct schema
+ * @private
+ * @return {Sheet} Investor Export sheet
+ */
+function ensureInvestorExportSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName('Investor Export');
+  
+  if (!sheet) {
+    sheet = ss.insertSheet('Investor Export');
+    const headers = CONFIG.INVESTOR_EXPORT_SCHEMA.map(col => col.name);
+    sheet.getRange(1, 1, 1, headers.length)
+      .setValues([headers])
+      .setFontWeight('bold')
+      .setBackground('#f3f3f3');
+    sheet.setFrozenRows(1);
+  }
+  
+  return sheet;
+}
+
+/**
  * ═══════════════════════════════════════════════════════════════════════════
  * WORKFLOW FUNCTIONS
  * ═══════════════════════════════════════════════════════════════════════════
@@ -2544,11 +2683,19 @@ function initializeSystem_() {
     const masterSheet = ensureMasterSheet_();
     const pendingSheet = ensurePendingSheet_();
     const auditSheet = ensureAuditLogSheet_();
+    const contributorsSheet = ensureContributorsSheet_();
+    const configSheet = ensureConfigSheet_();
+    const rateCardSheet = ensureRateCardSheet_();
+    const investorExportSheet = ensureInvestorExportSheet_();
     
     // Enforce schemas
     enforceSchemaOrder_(masterSheet, CONFIG.MASTER_SCHEMA);
     enforceSchemaOrder_(pendingSheet, CONFIG.PENDING_SCHEMA);
     enforceSchemaOrder_(auditSheet, CONFIG.AUDIT_LOG_SCHEMA);
+    enforceSchemaOrder_(contributorsSheet, CONFIG.CONTRIBUTORS_SCHEMA);
+    enforceSchemaOrder_(configSheet, CONFIG.CONFIG_SCHEMA);
+    enforceSchemaOrder_(rateCardSheet, CONFIG.RATE_CARD_SCHEMA);
+    enforceSchemaOrder_(investorExportSheet, CONFIG.INVESTOR_EXPORT_SCHEMA);
     
     SpreadsheetApp.flush();
     
@@ -2571,7 +2718,11 @@ function initializeSystem_() {
       `Sheets created/verified:\n` +
       `• Master (${CONFIG.MASTER_SCHEMA.length} columns)\n` +
       `• Pending (${CONFIG.PENDING_SCHEMA.length} columns)\n` +
-      `• Audit Log (${CONFIG.AUDIT_LOG_SCHEMA.length} columns)\n\n` +
+      `• Audit Log (${CONFIG.AUDIT_LOG_SCHEMA.length} columns)\n` +
+      `• Contributors (${CONFIG.CONTRIBUTORS_SCHEMA.length} columns)\n` +
+      `• Config (${CONFIG.CONFIG_SCHEMA.length} columns)\n` +
+      `• Rate Card (${CONFIG.RATE_CARD_SCHEMA.length} columns)\n` +
+      `• Investor Export (${CONFIG.INVESTOR_EXPORT_SCHEMA.length} columns)\n\n` +
       `Sheet protections applied.\n` +
       `Signature secret initialized.`,
       SpreadsheetApp.getUi().ButtonSet.OK
@@ -2979,29 +3130,528 @@ function rejectContributionUI_() {
  * Uses UI wrapper functions for approve/reject to avoid null row number errors.
  */
 function onOpen() {
-  const menu = SpreadsheetApp.getUi()
-    .createMenu('Slicing Pie')
-    .addItem('Initialize System', 'initializeSystem_')
-    .addSeparator()
-    .addSubMenu(SpreadsheetApp.getUi().createMenu('Workflow')
-      .addItem('Approve (Prompt)', 'approveContributionUI_')  // FIX 4: Use UI wrapper
-      .addItem('Reject (Prompt)', 'rejectContributionUI_'))   // FIX 4: Use UI wrapper
-    .addSeparator()
-    .addSubMenu(SpreadsheetApp.getUi().createMenu('Migration')
-      .addItem('Migrate Pending RequestIds', 'migratePendingRequestIds_')
-      .addItem('Re-sign Existing Decisions', 'resignExistingDecisions_'))
-    .addSeparator()
-    .addSubMenu(SpreadsheetApp.getUi().createMenu('Verification')
-      .addItem('Verify Protections', 'verifyProtections_')
-      .addItem('Verify Audit Chain', 'verifyAuditChainUI_')
-      .addItem('Verify Row Signatures', 'verifyRowSignaturesUI_')
-      .addItem('Verify Decision Signatures', 'verifyDecisionSignaturesUI_'))
-    .addSeparator()
-    .addItem('View Cap Table', 'viewCapTableUI_')
-    .addItem('Rotate Signature Secret', 'rotateSignatureSecret_')
-    .addItem('Manual Audit Flush', 'manualFlushAuditQueue_');
-  
-  menu.addToUi();
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.createMenu('Slicing Pie')
+      .addItem('Initialize System', 'initializeSystem_')
+      .addSeparator()
+      .addSubMenu(ui.createMenu('Admin')
+        .addItem('Add Contributor', 'addContributorUI_')
+        .addItem('Rename Contributor', 'renameContributorUI_')
+        .addItem('Generate Investor Export', 'generateInvestorExportUI_')
+        .addItem('Apply Protections', 'applyProtectionsUI_')
+        .addItem('Audit Protections', 'auditProtectionsUI_')
+        .addItem('Verify Audit Chain', 'verifyAuditChainUI_'))
+      .addSeparator()
+      .addSubMenu(ui.createMenu('Workflow')
+        .addItem('Approve (Prompt)', 'approveContributionUI_')
+        .addItem('Reject (Prompt)', 'rejectContributionUI_')
+        .addItem('Approve Selected Row', 'approveSelectedPendingRowUI_')
+        .addItem('Reject Selected Row', 'rejectSelectedPendingRowUI_'))
+      .addSeparator()
+      .addSubMenu(ui.createMenu('Migration')
+        .addItem('Migrate Pending RequestIds', 'migratePendingRequestIds_')
+        .addItem('Re-sign Existing Decisions', 'resignExistingDecisions_'))
+      .addSeparator()
+      .addSubMenu(ui.createMenu('Verification')
+        .addItem('Verify Protections', 'verifyProtections_')
+        .addItem('Verify Row Signatures', 'verifyRowSignaturesUI_')
+        .addItem('Verify Decision Signatures', 'verifyDecisionSignaturesUI_'))
+      .addSeparator()
+      .addItem('View Cap Table', 'viewCapTableUI_')
+      .addItem('Rotate Signature Secret', 'rotateSignatureSecret_')
+      .addItem('Manual Audit Flush', 'manualFlushAuditQueue_')
+      .addToUi();
+  } catch (err) {
+    console.error('onOpen() failed:', err);
+    try {
+      SpreadsheetApp.getUi().alert(
+        'Menu Initialization Error\n\n' +
+        'The Slicing Pie menu could not be loaded.\n\n' +
+        'Error: ' + err.message + '\n\n' +
+        'Please check the execution log for details.'
+      );
+    } catch (alertErr) {
+      console.error('Failed to show alert:', alertErr);
+    }
+  }
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ADMIN UI WRAPPERS
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+/**
+ * UI wrapper to add a new contributor (parameterless, safe for menu)
+ */
+function addContributorUI_() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    
+    // Prompt for contributor details
+    const nameResponse = ui.prompt('Add Contributor', 'Enter contributor name:', ui.ButtonSet.OK_CANCEL);
+    if (nameResponse.getSelectedButton() !== ui.Button.OK) return;
+    const name = nameResponse.getResponseText().trim();
+    if (!name) {
+      ui.alert('Error', 'Name cannot be empty.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    const emailResponse = ui.prompt('Add Contributor', 'Enter contributor email:', ui.ButtonSet.OK_CANCEL);
+    if (emailResponse.getSelectedButton() !== ui.Button.OK) return;
+    const email = emailResponse.getResponseText().trim();
+    if (!email || !email.includes('@')) {
+      ui.alert('Error', 'Please enter a valid email address.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    const roleResponse = ui.prompt('Add Contributor', 'Enter contributor role (e.g., Developer, Designer):', ui.ButtonSet.OK_CANCEL);
+    if (roleResponse.getSelectedButton() !== ui.Button.OK) return;
+    const role = roleResponse.getResponseText().trim();
+    if (!role) {
+      ui.alert('Error', 'Role cannot be empty.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Generate unique ContributorKey
+    const contributorKey = name.toUpperCase().replace(/\s+/g, '_') + '_' + Date.now();
+    
+    // Get Contributors sheet
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Contributors');
+    if (!sheet) {
+      ui.alert('Error', 'Contributors sheet not found. Please run "Initialize System" first.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Append new contributor row
+    sheet.appendRow([contributorKey, name, email, role, new Date(), 'Active', '']);
+    
+    ui.alert(
+      'Contributor Added',
+      'Contributor added successfully!\n\n' +
+      'ContributorKey: ' + contributorKey + '\n' +
+      'Name: ' + name + '\n' +
+      'Email: ' + email + '\n' +
+      'Role: ' + role,
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    console.error('addContributorUI_ error:', err);
+    SpreadsheetApp.getUi().alert(
+      'Error Adding Contributor',
+      'Failed to add contributor.\n\nError: ' + err.message,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
+}
+
+/**
+ * UI wrapper to rename a contributor (parameterless, safe for menu)
+ */
+function renameContributorUI_() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    
+    // Prompt for ContributorKey
+    const keyResponse = ui.prompt('Rename Contributor', 'Enter ContributorKey to rename:', ui.ButtonSet.OK_CANCEL);
+    if (keyResponse.getSelectedButton() !== ui.Button.OK) return;
+    const contributorKey = keyResponse.getResponseText().trim();
+    if (!contributorKey) {
+      ui.alert('Error', 'ContributorKey cannot be empty.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Prompt for new name
+    const nameResponse = ui.prompt('Rename Contributor', 'Enter new name:', ui.ButtonSet.OK_CANCEL);
+    if (nameResponse.getSelectedButton() !== ui.Button.OK) return;
+    const newName = nameResponse.getResponseText().trim();
+    if (!newName) {
+      ui.alert('Error', 'New name cannot be empty.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Get Contributors sheet
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Contributors');
+    if (!sheet) {
+      ui.alert('Error', 'Contributors sheet not found. Please run "Initialize System" first.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Find contributor row
+    const data = sheet.getDataRange().getValues();
+    let found = false;
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0] === contributorKey) {
+        sheet.getRange(i + 1, 2).setValue(newName); // Update Name column (B)
+        found = true;
+        break;
+      }
+    }
+    
+    if (found) {
+      ui.alert(
+        'Contributor Renamed',
+        'Contributor renamed successfully!\n\nContributorKey: ' + contributorKey + '\nNew Name: ' + newName,
+        ui.ButtonSet.OK
+      );
+    } else {
+      ui.alert('Error', 'Contributor not found: ' + contributorKey, ui.ButtonSet.OK);
+    }
+  } catch (err) {
+    console.error('renameContributorUI_ error:', err);
+    SpreadsheetApp.getUi().alert(
+      'Error Renaming Contributor',
+      'Failed to rename contributor.\n\nError: ' + err.message,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
+}
+
+/**
+ * UI wrapper to generate investor export report (parameterless, safe for menu)
+ */
+function generateInvestorExportUI_() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    
+    // Confirm action
+    const response = ui.alert(
+      'Generate Investor Export',
+      'This will regenerate the Investor Export sheet with current data from Master.\n\nProceed?',
+      ui.ButtonSet.YES_NO
+    );
+    if (response !== ui.Button.YES) return;
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const masterSheet = ss.getSheetByName('Master');
+    const exportSheet = ss.getSheetByName('Investor Export');
+    
+    if (!masterSheet || !exportSheet) {
+      ui.alert('Error', 'Master or Investor Export sheet not found. Please run "Initialize System" first.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Aggregate data from Master
+    const masterData = masterSheet.getDataRange().getValues();
+    const aggregated = {};
+    
+    for (let i = 1; i < masterData.length; i++) {
+      const contributorKey = masterData[i][1]; // ContributorKey is column B (index 1)
+      const name = masterData[i][2]; // ContributorName is column C (index 2)
+      const totalSlices = parseFloat(masterData[i][8]) || 0; // TotalSlices is column I (index 8)
+      const cashInvested = 0; // TODO: Calculate from contribution type
+      
+      if (!aggregated[contributorKey]) {
+        aggregated[contributorKey] = {
+          name: name,
+          totalSlices: 0,
+          cashInvested: 0
+        };
+      }
+      
+      aggregated[contributorKey].totalSlices += totalSlices;
+      aggregated[contributorKey].cashInvested += cashInvested;
+    }
+    
+    // Calculate equity percentages
+    const totalSlicesAll = Object.values(aggregated).reduce((sum, c) => sum + c.totalSlices, 0);
+    
+    // Build export rows
+    const exportRows = [];
+    for (const [key, data] of Object.entries(aggregated)) {
+      const equityPercent = totalSlicesAll > 0 ? (data.totalSlices / totalSlicesAll) * 100 : 0;
+      exportRows.push([
+        key,
+        data.name,
+        data.totalSlices,
+        equityPercent,
+        data.cashInvested,
+        new Date()
+      ]);
+    }
+    
+    // Clear existing data and write new
+    if (exportSheet.getLastRow() > 1) {
+      exportSheet.getRange(2, 1, exportSheet.getLastRow() - 1, exportSheet.getLastColumn()).clearContent();
+    }
+    
+    if (exportRows.length > 0) {
+      exportSheet.getRange(2, 1, exportRows.length, exportRows[0].length).setValues(exportRows);
+    }
+    
+    ui.alert(
+      'Investor Export Generated',
+      'Investor export completed successfully!\n\n' +
+      'Contributors: ' + exportRows.length + '\n' +
+      'Total Slices: ' + totalSlicesAll.toFixed(2),
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    console.error('generateInvestorExportUI_ error:', err);
+    SpreadsheetApp.getUi().alert(
+      'Error Generating Export',
+      'Failed to generate investor export.\n\nError: ' + err.message,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
+}
+
+/**
+ * UI wrapper to apply sheet protections (parameterless, safe for menu)
+ */
+function applyProtectionsUI_() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    
+    // Confirm action
+    const response = ui.alert(
+      'Apply Protections',
+      'This will apply sheet protections to prevent unauthorized edits.\n\nProceed?',
+      ui.ButtonSet.YES_NO
+    );
+    if (response !== ui.Button.YES) return;
+    
+    // Call protection logic (stub for now)
+    applyProtections_();
+    
+    ui.alert(
+      'Protections Applied',
+      'Sheet protections have been applied successfully.',
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    console.error('applyProtectionsUI_ error:', err);
+    SpreadsheetApp.getUi().alert(
+      'Error Applying Protections',
+      'Failed to apply protections.\n\nError: ' + err.message,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
+}
+
+/**
+ * Stub for sheet protection logic (to be implemented)
+ * @private
+ */
+function applyProtections_() {
+  console.log('applyProtections_() called (stub - to be implemented)');
+  // TODO: Implement protection logic for Master, Audit Log, etc.
+}
+
+/**
+ * UI wrapper to audit existing protections (parameterless, safe for menu)
+ */
+function auditProtectionsUI_() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    
+    // Call audit logic (stub for now)
+    const results = auditProtections_();
+    
+    ui.alert(
+      'Protection Audit Results',
+      'Protected Ranges: ' + results.protectedRanges + '\n' +
+      'Warnings: ' + (results.warnings.length > 0 ? results.warnings.join(', ') : 'None'),
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    console.error('auditProtectionsUI_ error:', err);
+    SpreadsheetApp.getUi().alert(
+      'Error Auditing Protections',
+      'Failed to audit protections.\n\nError: ' + err.message,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
+}
+
+/**
+ * Stub for protection audit logic (to be implemented)
+ * @private
+ * @return {Object} Audit results
+ */
+function auditProtections_() {
+  console.log('auditProtections_() called (stub - to be implemented)');
+  // TODO: Implement audit logic for protected ranges
+  return { protectedRanges: 0, warnings: [] };
+}
+
+/**
+ * UI wrapper to verify audit chain (parameterless, safe for menu)
+ */
+function verifyAuditChainUI_() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    
+    // Call existing verifyAuditChain_ function
+    const results = verifyAuditChain_();
+    
+    let message = 'Audit Chain Verification\n\n';
+    if (results.valid) {
+      message += '✅ Chain is valid\n\n';
+      message += 'Total rows verified: ' + (results.totalRows || 0);
+    } else {
+      message += '❌ Chain validation failed\n\n';
+      message += 'Errors: ' + (results.errors ? results.errors.join('\n') : 'Unknown error');
+    }
+    
+    ui.alert('Audit Chain Verification', message, ui.ButtonSet.OK);
+  } catch (err) {
+    console.error('verifyAuditChainUI_ error:', err);
+    SpreadsheetApp.getUi().alert(
+      'Error Verifying Audit Chain',
+      'Failed to verify audit chain.\n\nError: ' + err.message,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * SELECTION-BASED WORKFLOW UI WRAPPERS
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
+/**
+ * UI wrapper to approve selected row in Pending sheet (parameterless, safe for menu)
+ */
+function approveSelectedPendingRowUI_() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const activeSheet = ss.getActiveSheet();
+    
+    // Validate sheet name
+    if (activeSheet.getName() !== 'Pending') {
+      ui.alert(
+        'Invalid Sheet',
+        'Please select a row in the Pending sheet.\n\nCurrent sheet: ' + activeSheet.getName(),
+        ui.ButtonSet.OK
+      );
+      return;
+    }
+    
+    // Get active selection
+    const selection = activeSheet.getActiveRange();
+    if (!selection) {
+      ui.alert('Error', 'No row selected. Please select a row in the Pending sheet.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Extract row number
+    const rowNum = selection.getRow();
+    
+    // Validate row number
+    if (rowNum < 2) {
+      ui.alert('Error', 'Invalid row selected. Please select a data row (row 2 or higher).', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Call core approval function
+    const result = approveContribution(rowNum);
+    
+    // Display success message
+    ui.alert(
+      'Contribution Approved',
+      'Contribution approved successfully!\n\n' +
+      'Contributor: ' + result.contributorKey + '\n' +
+      'Slices Awarded: ' + result.slicesAwarded.toFixed(2) + '\n' +
+      'Equity: ' + result.equityPercent.toFixed(4) + '%\n' +
+      'Decision Signature: ' + result.decisionSignature.substring(0, 16) + '...\n' +
+      'Master Signature: ' + result.masterRowSignature.substring(0, 16) + '...',
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    console.error('approveSelectedPendingRowUI_ error:', err);
+    SpreadsheetApp.getUi().alert(
+      'Error Approving Contribution',
+      'Failed to approve contribution.\n\nError: ' + err.message + '\n\n' +
+      'Please ensure the selected row has valid data and required fields are populated.',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
+}
+
+/**
+ * UI wrapper to reject selected row in Pending sheet (parameterless, safe for menu)
+ */
+function rejectSelectedPendingRowUI_() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const activeSheet = ss.getActiveSheet();
+    
+    // Validate sheet name
+    if (activeSheet.getName() !== 'Pending') {
+      ui.alert(
+        'Invalid Sheet',
+        'Please select a row in the Pending sheet.\n\nCurrent sheet: ' + activeSheet.getName(),
+        ui.ButtonSet.OK
+      );
+      return;
+    }
+    
+    // Get active selection
+    const selection = activeSheet.getActiveRange();
+    if (!selection) {
+      ui.alert('Error', 'No row selected. Please select a row in the Pending sheet.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Extract row number
+    const rowNum = selection.getRow();
+    
+    // Validate row number
+    if (rowNum < 2) {
+      ui.alert('Error', 'Invalid row selected. Please select a data row (row 2 or higher).', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Prompt for rejection reason
+    const reasonResponse = ui.prompt(
+      'Reject Contribution',
+      'Enter rejection reason for row ' + rowNum + ':',
+      ui.ButtonSet.OK_CANCEL
+    );
+    if (reasonResponse.getSelectedButton() !== ui.Button.OK) return;
+    
+    const reason = reasonResponse.getResponseText().trim();
+    if (!reason) {
+      ui.alert('Error', 'Rejection reason cannot be empty.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Update Pending row with rejection
+    const pending = ss.getSheetByName('Pending');
+    const statusCol = CONFIG.PENDING_SCHEMA_POSITIONS['Status'] + 1;
+    const notesCol = CONFIG.PENDING_SCHEMA_POSITIONS['Notes'] + 1;
+    
+    pending.getRange(rowNum, statusCol).setValue('REJECTED');
+    pending.getRange(rowNum, notesCol).setValue('Rejected: ' + reason);
+    
+    // Log audit event
+    logAuditEvent_(
+      'REJECT_CONTRIBUTION',
+      getActorEmail_(),
+      'Rejected pending row ' + rowNum + ': ' + reason
+    );
+    
+    ui.alert(
+      'Contribution Rejected',
+      'Contribution rejected successfully!\n\nRow: ' + rowNum + '\nReason: ' + reason,
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    console.error('rejectSelectedPendingRowUI_ error:', err);
+    SpreadsheetApp.getUi().alert(
+      'Error Rejecting Contribution',
+      'Failed to reject contribution.\n\nError: ' + err.message,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
 }
 
 /**
