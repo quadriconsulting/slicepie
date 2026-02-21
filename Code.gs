@@ -3133,34 +3133,32 @@ function onOpen() {
   try {
     const ui = SpreadsheetApp.getUi();
     ui.createMenu('Slicing Pie')
-      .addItem('Initialize System', 'initializeSystem_')
+      .addItem('Record Contribution', 'recordContributionUI_')
+      .addItem('View Cap Table', 'viewCapTableUI_')
+      .addItem('Rotate Signature Secret', 'rotateSignatureSecret_')
+      .addItem('Manual Audit Flush', 'manualFlushAuditQueue_')
       .addSeparator()
       .addSubMenu(ui.createMenu('Admin')
+        .addItem('Initialize System', 'initializeSystem_')
+        .addItem('Approve Contributions', 'approveSelectedPendingRowUI_')
         .addItem('Add Contributor', 'addContributorUI_')
         .addItem('Rename Contributor', 'renameContributorUI_')
         .addItem('Generate Investor Export', 'generateInvestorExportUI_')
         .addItem('Apply Protections', 'applyProtectionsUI_')
         .addItem('Audit Protections', 'auditProtectionsUI_')
-        .addItem('Verify Audit Chain', 'verifyAuditChainUI_'))
-      .addSeparator()
+        .addItem('Verify Audit Chain', 'verifyAuditChainUI_')
+        .addItem('Rebuild Pending Queue (Stub)', 'rebuildPendingQueueUI_')
+        .addItem('Rebuild Master Totals (Stub)', 'rebuildMasterTotalsUI_'))
       .addSubMenu(ui.createMenu('Workflow')
         .addItem('Approve (Prompt)', 'approveContributionUI_')
-        .addItem('Reject (Prompt)', 'rejectContributionUI_')
-        .addItem('Approve Selected Row', 'approveSelectedPendingRowUI_')
-        .addItem('Reject Selected Row', 'rejectSelectedPendingRowUI_'))
-      .addSeparator()
+        .addItem('Reject (Prompt)', 'rejectContributionUI_'))
       .addSubMenu(ui.createMenu('Migration')
         .addItem('Migrate Pending RequestIds', 'migratePendingRequestIds_')
         .addItem('Re-sign Existing Decisions', 'resignExistingDecisions_'))
-      .addSeparator()
       .addSubMenu(ui.createMenu('Verification')
         .addItem('Verify Protections', 'verifyProtections_')
         .addItem('Verify Row Signatures', 'verifyRowSignaturesUI_')
         .addItem('Verify Decision Signatures', 'verifyDecisionSignaturesUI_'))
-      .addSeparator()
-      .addItem('View Cap Table', 'viewCapTableUI_')
-      .addItem('Rotate Signature Secret', 'rotateSignatureSecret_')
-      .addItem('Manual Audit Flush', 'manualFlushAuditQueue_')
       .addToUi();
   } catch (err) {
     console.error('onOpen() failed:', err);
@@ -3651,6 +3649,146 @@ function rejectSelectedPendingRowUI_() {
       'Failed to reject contribution.\n\nError: ' + err.message,
       SpreadsheetApp.getUi().ButtonSet.OK
     );
+  }
+}
+
+/**
+ * UI wrapper to record a new contribution (parameterless, safe for menu)
+ */
+function recordContributionUI_() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    
+    // Prompt for ContributorKey
+    const keyResponse = ui.prompt('Record Contribution', 'Enter ContributorKey:', ui.ButtonSet.OK_CANCEL);
+    if (keyResponse.getSelectedButton() !== ui.Button.OK) return;
+    const contributorKey = keyResponse.getResponseText().trim();
+    if (!contributorKey) {
+      ui.alert('Error', 'ContributorKey cannot be empty.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Prompt for ContributionType
+    const typeResponse = ui.prompt('Record Contribution', 'Enter ContributionType (e.g., Full-Time Work, Cash Investment):', ui.ButtonSet.OK_CANCEL);
+    if (typeResponse.getSelectedButton() !== ui.Button.OK) return;
+    const contributionType = typeResponse.getResponseText().trim();
+    if (!contributionType) {
+      ui.alert('Error', 'ContributionType cannot be empty.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Prompt for ValueUSD
+    const valueResponse = ui.prompt('Record Contribution', 'Enter ValueUSD (numeric):', ui.ButtonSet.OK_CANCEL);
+    if (valueResponse.getSelectedButton() !== ui.Button.OK) return;
+    const valueUSD = parseFloat(valueResponse.getResponseText().trim());
+    if (isNaN(valueUSD) || valueUSD < 0) {
+      ui.alert('Error', 'ValueUSD must be a valid positive number.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Prompt for SlicesDelta
+    const slicesResponse = ui.prompt('Record Contribution', 'Enter SlicesDelta (numeric):', ui.ButtonSet.OK_CANCEL);
+    if (slicesResponse.getSelectedButton() !== ui.Button.OK) return;
+    const slicesDelta = parseFloat(slicesResponse.getResponseText().trim());
+    if (isNaN(slicesDelta) || slicesDelta < 0) {
+      ui.alert('Error', 'SlicesDelta must be a valid positive number.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Prompt for Notes (optional)
+    const notesResponse = ui.prompt('Record Contribution', 'Enter Notes (optional):', ui.ButtonSet.OK_CANCEL);
+    const notes = notesResponse.getSelectedButton() === ui.Button.OK ? notesResponse.getResponseText().trim() : '';
+    
+    // Get Pending sheet
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const pendingSheet = ss.getSheetByName('Pending');
+    if (!pendingSheet) {
+      ui.alert('Error', 'Pending sheet not found. Please run "Initialize System" first.', ui.ButtonSet.OK);
+      return;
+    }
+    
+    // Append new pending row
+    pendingSheet.appendRow([
+      new Date(),                  // Timestamp
+      contributorKey,              // ContributorKey
+      '',                          // ContributorName (empty for now)
+      contributionType,            // ContributionType
+      '',                          // Multiplier (empty)
+      valueUSD,                    // BaseValue
+      '',                          // Quantity (empty)
+      slicesDelta,                 // SlicesAwarded
+      '',                          // EvidenceURL (empty)
+      notes,                       // Notes
+      'PENDING',                   // Status
+      '',                          // Approvers (empty)
+      '',                          // DecisionSignature (empty)
+      '',                          // DecisionTimestamp (empty)
+      ''                           // RequestId (empty)
+    ]);
+    
+    const newRow = pendingSheet.getLastRow();
+    
+    ui.alert(
+      'Contribution Recorded',
+      'Contribution recorded successfully in Pending sheet!
+
+' +
+      'Row: ' + newRow + '
+' +
+      'ContributorKey: ' + contributorKey + '
+' +
+      'Type: ' + contributionType + '
+' +
+      'Value: $' + valueUSD.toFixed(2) + '
+' +
+      'Slices: ' + slicesDelta.toFixed(2),
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    console.error('recordContributionUI_ error:', err);
+    SpreadsheetApp.getUi().alert(
+      'Error Recording Contribution',
+      'Failed to record contribution.
+
+Error: ' + err.message,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
+}
+
+/**
+ * UI wrapper stub for rebuilding pending queue (parameterless, safe for menu)
+ */
+function rebuildPendingQueueUI_() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.alert(
+      'Coming Soon',
+      'Rebuild Pending Queue feature is not yet implemented.
+
+This will allow rebuilding the pending contribution queue from historical data.',
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    console.error('rebuildPendingQueueUI_ error:', err);
+  }
+}
+
+/**
+ * UI wrapper stub for rebuilding master totals (parameterless, safe for menu)
+ */
+function rebuildMasterTotalsUI_() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.alert(
+      'Coming Soon',
+      'Rebuild Master Totals feature is not yet implemented.
+
+This will allow recalculating all master sheet totals and equity percentages.',
+      ui.ButtonSet.OK
+    );
+  } catch (err) {
+    console.error('rebuildMasterTotalsUI_ error:', err);
   }
 }
 
