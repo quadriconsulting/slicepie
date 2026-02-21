@@ -1,76 +1,82 @@
-# Slicing Pie Equity Tracking (Google Sheets + Apps Script)
+# SlicePie (Slicing Pie Equity Tracker) – Google Sheets + Apps Script
 
-A Google Sheets–bound Apps Script implementation of a Slicing Pie–style equity tracker with:
-- Pending → Approval/Reject → Master ledger workflow
-- Quorum-based approvals (for high-value contributions)
-- HMAC-backed decision integrity + audit logging
-- Deterministic verification suite for critical correctness properties
+This repository contains a Google Sheets / Google Apps Script implementation of a Slicing Pie–style equity tracking workflow with a **Pending → Approval → Master ledger** pipeline, audit logging, and deterministic verification tests.
 
-## Repository Layout
+## What’s in this repo
 
-- `Code.gs` — **current production script** (promoted from `code_gbp_quorum_FIXED2.gs`)
-- `Code_legacy.gs` — archived legacy script (previous `Code.gs`)
-- `Engineering Implementation Spec.md` — technical implementation guidance
-- `Master Requirements Document (MRD).md` — product/business requirements
-- `CR_IMPLEMENTATION_*.md` / `PHASE_*.md` — evidence bundles, coverage, verification, and reports
+- `Code.gs`  
+  Primary Apps Script implementation (current production candidate).  
+  Includes CR-01/CR-02/CR-03 reservation + idempotency logic and a deterministic test suite.
 
-## Quick Start (Manual Test in Google Sheets)
+- `Code_legacy.gs`  
+  Archived legacy implementation (kept for reference; **do not** load into the Apps Script project).
 
-1. Create a new Google Sheet.
-2. Go to **Extensions → Apps Script**.
-3. Paste the contents of `Code.gs` into the editor (or replace the file contents).
-4. **Save** and reload the spreadsheet tab.
-5. Confirm a custom menu appears: **Slicing Pie**.
+- `Engineering Implementation Spec.md` / `Master Requirements Document (MRD).md`  
+  Requirements and implementation notes.
 
-### Initialize the system
-From the spreadsheet:
-- **Slicing Pie → Initialize System**
+- `CR_IMPLEMENTATION_*` / `PHASE_*` docs  
+  Evidence bundles and compliance reports.
 
-This creates/repairs required sheets (e.g., Pending, Master, Audit Log) and enforces schema.
+## Key features
 
-### Approve a Pending row (IMPORTANT)
-Do **NOT** run `approveContribution()` directly with no arguments.
+- Pending contributions captured in a `Pending` sheet
+- Approval flow with concurrency/idempotency protections:
+  - Reservation state machine
+  - Canonical re-fetch by RequestId
+  - MASTER_WRITTEN skip path to prevent duplicate master writes
+  - Pointer validation + bounded retry
+- Append-only ledger in `Master` sheet
+- Audit trail in `Audit` sheet
+- Deterministic verification suite runnable inside Apps Script
 
-Use the menu-driven wrapper:
-- **Slicing Pie → Workflow → Approve (Prompt)**
+## Quick start (Google Apps Script)
 
-It will ask you for the Pending sheet row number (must be **≥ 2**).
+### 1) Create a new Apps Script project
+- Google Drive → New → More → Google Apps Script
 
-If you run `approveContribution()` from the Apps Script editor without an argument,
-you will see:
-> `approveContribution: pendingRowNum is required (null/undefined received)...`
+### 2) Add the code
+- Copy the contents of `Code.gs` from this repo into the Apps Script editor file `Code.gs`
+- IMPORTANT: Do NOT add `Code_legacy.gs` into the Apps Script project (duplicate globals can break compilation)
 
-This is expected and is a safety guard.
+### 3) Reload the spreadsheet to create menus
+- Refresh the Google Sheet
+- If the script defines `onOpen()`, it will add custom menu items
 
-### Reject a Pending row
-- **Slicing Pie → Workflow → Reject (Prompt)**
+### 4) Initialize / migrate schema (if your menu provides it)
+Run the initialization/migration actions in your menu (names may vary), typically:
+1. Initialize System (create sheets + headers)
+2. Enforce / Migrate Schema (ensure new Pending columns exist)
+3. Migrate RequestIds (if legacy rows exist without RequestId)
 
-## Verification Suite (Deterministic)
+## Verification (must run)
 
-Run the full verification suite from the Apps Script editor:
-- Select function: `RUN_ALL_CR_VERIFICATIONS`
-- Click **Run**
+Run the full deterministic test suite:
 
-Expected:
-- UI alert indicates all tests passed
-- Execution logs show PASS for all CR tests
+1. Apps Script editor → select function `RUN_ALL_CR_VERIFICATIONS`
+2. Click Run
+3. Expected result: all tests PASS
 
-## What’s Implemented (CR-01/02/03)
+If tests fail, fix before using the workflow in production.
 
-The current `Code.gs` includes the reservation/state-machine and correctness protections:
+## Common pitfalls
 
-- CR-01: post-reservation re-fetch + MASTER_WRITTEN skip + row identity safety
-- CR-02: invalid timestamp produces clean RESERVED record (no FAILED+mixed metadata)
-- CR-03: master pointer validation on skip path + bounded retry behavior
+### “approveContribution: pendingRowNum is required”
+You ran `approveContribution()` directly without a row number.
+Use the menu-driven UI wrapper (e.g., `approveContributionUI_()`) or call `approveContribution(<rowNum>)`.
 
-## Development / PR Workflow
+### “An unknown error has occurred…”
+Most commonly caused by duplicate globals across multiple `.gs` files.
+Remove `Code_legacy.gs` from the Apps Script project.
 
-Recommended PR pattern:
-- PR-0: documentation-only (plan, coverage, verify notes)
-- PR-1: code changes + tests + minimal diff
-- Merge only after manual menu-driven validation in a Sheet and after `RUN_ALL_CR_VERIFICATIONS()` passes
+## Release workflow (recommended)
 
-## Notes
+1. Create a feature branch
+2. Make minimal diffs
+3. Open PR
+4. Merge after:
+   - deterministic tests run in Apps Script
+   - review confirms no unrelated refactors
+5. Tag the release commit
 
-- This project is designed to be run as a **spreadsheet-bound** Apps Script project.
-- Menu-driven workflow is the intended operational path for approvals/rejections.
+## License
+Add your license here (MIT/Apache-2.0/Proprietary).
