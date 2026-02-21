@@ -1,82 +1,71 @@
-# SlicePie (Slicing Pie Equity Tracker) – Google Sheets + Apps Script
+# Slicing Pie (Google Sheets + Apps Script)
 
-This repository contains a Google Sheets / Google Apps Script implementation of a Slicing Pie–style equity tracking workflow with a **Pending → Approval → Master ledger** pipeline, audit logging, and deterministic verification tests.
+This repo contains a Google Sheets implementation of a **Slicing Pie** equity tracker:
+- Contributors record time/cash/expenses into a **Pending** ledger
+- Founders approve contributions (with GBP quorum rules)
+- Approved contributions are written to an append-only **Master** ledger
+- An **Audit Log** provides tamper-evident tracking (hash chain + signatures)
+- Optional admin sheets: **Config**, **Rate Card**, **Investor Export**
 
-## What’s in this repo
+## Project Files
 
-- `Code.gs`  
-  Primary Apps Script implementation (current production candidate).  
-  Includes CR-01/CR-02/CR-03 reservation + idempotency logic and a deterministic test suite.
+- `Code.gs` — **Primary Apps Script implementation** (current)
+- `Code_legacy.gs` — Archived/legacy script (do not deploy alongside Code.gs unless all entrypoints are renamed)
+- `Engineering Implementation Spec.md` — Technical design notes
+- `Master Requirements Document (MRD).md` — Business requirements
 
-- `Code_legacy.gs`  
-  Archived legacy implementation (kept for reference; **do not** load into the Apps Script project).
+## Key Sheets
 
-- `Engineering Implementation Spec.md` / `Master Requirements Document (MRD).md`  
-  Requirements and implementation notes.
+- **Pending** — new contributions awaiting approval
+- **Master** — append-only approved contribution ledger
+- **Audit Log** — security/audit event stream
+- **Config** — system settings (optional)
+- **Rate Card** — role-based hourly rates (optional)
+- **Investor Export** — cap table / investor view (optional)
 
-- `CR_IMPLEMENTATION_*` / `PHASE_*` docs  
-  Evidence bundles and compliance reports.
+## Approval + Quorum Rules (GBP)
 
-## Key features
+- For contributions below the threshold: **1 founder approval** finalizes.
+- For contributions at/above the threshold: **quorum approval** is required (e.g., **2 founders**).
 
-- Pending contributions captured in a `Pending` sheet
-- Approval flow with concurrency/idempotency protections:
-  - Reservation state machine
-  - Canonical re-fetch by RequestId
-  - MASTER_WRITTEN skip path to prevent duplicate master writes
-  - Pointer validation + bounded retry
-- Append-only ledger in `Master` sheet
-- Audit trail in `Audit` sheet
-- Deterministic verification suite runnable inside Apps Script
+(Threshold and quorum are configured in `CONFIG`.)
 
-## Quick start (Google Apps Script)
+## How to Deploy / Run (Manual)
 
-### 1) Create a new Apps Script project
-- Google Drive → New → More → Google Apps Script
+1. Create or open your target Google Sheet.
+2. Open **Extensions → Apps Script**.
+3. Paste the contents of `Code.gs` into the Apps Script editor (or upload as a file).
+4. Set `CONFIG.OWNER_EMAIL` and `CONFIG.FOUNDER_APPROVERS` in `Code.gs`.
+5. Save, then refresh the spreadsheet to load the menu (`onOpen`).
+6. Run: **Slicing Pie → Initialize System**
+   - Creates/verifies required sheets and schemas
+   - Applies protections
+   - Initializes signature secret
 
-### 2) Add the code
-- Copy the contents of `Code.gs` from this repo into the Apps Script editor file `Code.gs`
-- IMPORTANT: Do NOT add `Code_legacy.gs` into the Apps Script project (duplicate globals can break compilation)
+## Workflow
 
-### 3) Reload the spreadsheet to create menus
-- Refresh the Google Sheet
-- If the script defines `onOpen()`, it will add custom menu items
+### Record a Contribution
+Use the menu option **Record Contribution** (or the provided UI function, if enabled).
+A new row is created in **Pending** with status/state set for approval.
 
-### 4) Initialize / migrate schema (if your menu provides it)
-Run the initialization/migration actions in your menu (names may vary), typically:
-1. Initialize System (create sheets + headers)
-2. Enforce / Migrate Schema (ensure new Pending columns exist)
-3. Migrate RequestIds (if legacy rows exist without RequestId)
+### Approve a Contribution
+Use **Slicing Pie → Workflow → Approve (Prompt)** and enter the Pending row number (≥2).
+- If quorum is not yet met: status becomes `PENDING_QUORUM`
+- When quorum is met: row is finalized and written to **Master**
 
-## Verification (must run)
+### Verification
+Use **Slicing Pie → Verification** menu items:
+- Verify Protections
+- Verify Audit Chain
+- Verify Row Signatures
+- Verify Decision Signatures
 
-Run the full deterministic test suite:
+## Development Notes
 
-1. Apps Script editor → select function `RUN_ALL_CR_VERIFICATIONS`
-2. Click Run
-3. Expected result: all tests PASS
-
-If tests fail, fix before using the workflow in production.
-
-## Common pitfalls
-
-### “approveContribution: pendingRowNum is required”
-You ran `approveContribution()` directly without a row number.
-Use the menu-driven UI wrapper (e.g., `approveContributionUI_()`) or call `approveContribution(<rowNum>)`.
-
-### “An unknown error has occurred…”
-Most commonly caused by duplicate globals across multiple `.gs` files.
-Remove `Code_legacy.gs` from the Apps Script project.
-
-## Release workflow (recommended)
-
-1. Create a feature branch
-2. Make minimal diffs
-3. Open PR
-4. Merge after:
-   - deterministic tests run in Apps Script
-   - review confirms no unrelated refactors
-5. Tag the release commit
+### IMPORTANT: Google Apps Script Namespace Collisions
+All `.gs` files share a global namespace. If two files define the same function name
+(e.g., `onOpen`, `approveContribution`), behavior is undefined/last-loaded-wins.
+If you keep `Code_legacy.gs` in the project, rename its entrypoints or remove it.
 
 ## License
-Add your license here (MIT/Apache-2.0/Proprietary).
+Internal project – add license if/when needed.
