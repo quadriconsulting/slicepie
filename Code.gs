@@ -3543,7 +3543,7 @@ function approveSelectedPendingRowUI_() {
     const rowNum = selection.getRow();
     
     // Validate row number
-    if (rowNum < 2) {
+    if (!Number.isInteger(rowNum) || rowNum < 2) {
       ui.alert('Error', 'Invalid row selected. Please select a data row (row 2 or higher).', ui.ButtonSet.OK);
       return;
     }
@@ -3603,7 +3603,7 @@ function rejectSelectedPendingRowUI_() {
     const rowNum = selection.getRow();
     
     // Validate row number
-    if (rowNum < 2) {
+    if (!Number.isInteger(rowNum) || rowNum < 2) {
       ui.alert('Error', 'Invalid row selected. Please select a data row (row 2 or higher).', ui.ButtonSet.OK);
       return;
     }
@@ -3730,27 +3730,19 @@ function recordContributionUI_() {
     
     ui.alert(
       'Contribution Recorded',
-      'Contribution recorded successfully in Pending sheet!
-
-' +
-      'Row: ' + newRow + '
-' +
-      'ContributorKey: ' + contributorKey + '
-' +
-      'Type: ' + contributionType + '
-' +
-      'Value: $' + valueUSD.toFixed(2) + '
-' +
-      'Slices: ' + slicesDelta.toFixed(2),
+      `Contribution recorded successfully in Pending sheet!\n\n` +
+      `Row: ${newRow}\n` +
+      `ContributorKey: ${contributorKey}\n` +
+      `Type: ${contributionType}\n` +
+      `Value: $${valueUSD.toFixed(2)}\n` +
+      `Slices: ${slicesDelta.toFixed(2)}`,
       ui.ButtonSet.OK
     );
   } catch (err) {
     console.error('recordContributionUI_ error:', err);
     SpreadsheetApp.getUi().alert(
       'Error Recording Contribution',
-      'Failed to record contribution.
-
-Error: ' + err.message,
+      `Failed to record contribution.\n\nError: ${err.message}`,
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   }
@@ -3764,9 +3756,7 @@ function rebuildPendingQueueUI_() {
     const ui = SpreadsheetApp.getUi();
     ui.alert(
       'Coming Soon',
-      'Rebuild Pending Queue feature is not yet implemented.
-
-This will allow rebuilding the pending contribution queue from historical data.',
+      `Rebuild Pending Queue feature is not yet implemented.\n\nThis will allow rebuilding the pending contribution queue from historical data.`,
       ui.ButtonSet.OK
     );
   } catch (err) {
@@ -3782,9 +3772,7 @@ function rebuildMasterTotalsUI_() {
     const ui = SpreadsheetApp.getUi();
     ui.alert(
       'Coming Soon',
-      'Rebuild Master Totals feature is not yet implemented.
-
-This will allow recalculating all master sheet totals and equity percentages.',
+      `Rebuild Master Totals feature is not yet implemented.\n\nThis will allow recalculating all master sheet totals and equity percentages.`,
       ui.ButtonSet.OK
     );
   } catch (err) {
