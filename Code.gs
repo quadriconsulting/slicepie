@@ -3543,7 +3543,7 @@ function approveSelectedPendingRowUI_() {
     const rowNum = selection.getRow();
     
     // Validate row number
-    if (rowNum < 2) {
+    if (!Number.isInteger(rowNum) || rowNum < 2) {
       ui.alert('Error', 'Invalid row selected. Please select a data row (row 2 or higher).', ui.ButtonSet.OK);
       return;
     }
@@ -3603,7 +3603,7 @@ function rejectSelectedPendingRowUI_() {
     const rowNum = selection.getRow();
     
     // Validate row number
-    if (rowNum < 2) {
+    if (!Number.isInteger(rowNum) || rowNum < 2) {
       ui.alert('Error', 'Invalid row selected. Please select a data row (row 2 or higher).', ui.ButtonSet.OK);
       return;
     }
