@@ -3516,59 +3516,63 @@ function verifyAuditChainUI_() {
 /**
  * UI wrapper to approve selected row in Pending sheet (parameterless, safe for menu)
  */
+
 function approveSelectedPendingRowUI_() {
+  const ui = SpreadsheetApp.getUi();
   try {
-    const ui = SpreadsheetApp.getUi();
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const activeSheet = ss.getActiveSheet();
-    
-    // Validate sheet name
-    if (activeSheet.getName() !== 'Pending') {
+    const sheet = ss.getActiveSheet();
+
+    if (!sheet || sheet.getName() !== 'Pending') {
+      ui.alert('Invalid Sheet', 'Please open the Pending sheet and select a data row (row 2 or higher).', ui.ButtonSet.OK);
+      return;
+    }
+
+    const range = sheet.getActiveRange();
+    if (!range) {
+      ui.alert('No Selection', 'No cell/row selected. Please select a cell in the Pending row you want to approve.', ui.ButtonSet.OK);
+      return;
+    }
+
+    const rowNum = range.getRow();
+    if (!Number.isInteger(rowNum) || rowNum < 2) {
+      ui.alert('Invalid Row', 'Please select a Pending data row (row 2 or higher).', ui.ButtonSet.OK);
+      return;
+    }
+
+    const result = approveContribution(rowNum);
+
+    // Quorum path (very important — do not assume fields exist)
+    if (result && result.success === false && result.state === 'PENDING_QUORUM') {
       ui.alert(
-        'Invalid Sheet',
-        'Please select a row in the Pending sheet.\n\nCurrent sheet: ' + activeSheet.getName(),
+        'Approval Recorded (Quorum Pending)',
+        'Approval recorded.\n\n' +
+          'Approvers: ' + result.approversCount + '/' + result.requiredApprovers + '\n' +
+          (result.message ? ('\n' + result.message) : ''),
         ui.ButtonSet.OK
       );
       return;
     }
-    
-    // Get active selection
-    const selection = activeSheet.getActiveRange();
-    if (!selection) {
-      ui.alert('Error', 'No row selected. Please select a row in the Pending sheet.', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Extract row number
-    const rowNum = selection.getRow();
-    
-    // Validate row number
-    if (!Number.isInteger(rowNum) || rowNum < 2) {
-      ui.alert('Error', 'Invalid row selected. Please select a data row (row 2 or higher).', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Call core approval function
-    const result = approveContribution(rowNum);
-    
-    // Display success message
+
+    // Success path
     ui.alert(
       'Contribution Approved',
-      'Contribution approved successfully!\n\n' +
-      'Contributor: ' + result.contributorKey + '\n' +
-      'Slices Awarded: ' + result.slicesAwarded.toFixed(2) + '\n' +
-      'Equity: ' + result.equityPercent.toFixed(4) + '%\n' +
-      'Decision Signature: ' + result.decisionSignature.substring(0, 16) + '...\n' +
-      'Master Signature: ' + result.masterRowSignature.substring(0, 16) + '...',
+      'Contribution approved successfully.\n\n' +
+        'Row: ' + rowNum + '\n' +
+        (result && result.contributorKey ? ('Contributor: ' + result.contributorKey + '\n') : '') +
+        (result && typeof result.slicesAwarded === 'number' ? ('Slices: ' + result.slicesAwarded.toFixed(2) + '\n') : '') +
+        (result && typeof result.equityPercent === 'number' ? ('Equity: ' + result.equityPercent.toFixed(4) + '%\n') : '') +
+        (result && result.decisionSignature ? ('Decision Sig: ' + String(result.decisionSignature).slice(0, 16) + '...\n') : '') +
+        (result && result.masterRowSignature ? ('Master Sig: ' + String(result.masterRowSignature).slice(0, 16) + '...') : ''),
       ui.ButtonSet.OK
     );
+
   } catch (err) {
     console.error('approveSelectedPendingRowUI_ error:', err);
-    SpreadsheetApp.getUi().alert(
+    ui.alert(
       'Error Approving Contribution',
-      'Failed to approve contribution.\n\nError: ' + err.message + '\n\n' +
-      'Please ensure the selected row has valid data and required fields are populated.',
-      SpreadsheetApp.getUi().ButtonSet.OK
+      'Failed to approve contribution.\n\nError: ' + (err && err.message ? err.message : String(err)),
+      ui.ButtonSet.OK
     );
   }
 }
