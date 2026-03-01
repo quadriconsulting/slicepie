@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add Contributor</title>
+  <style>
+    /* ── Reset ─────────────────────────────────────────────────────────────── */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* ── Base ───────────────────────────────────────────────────────────────── */
+    body {
+      font-family: 'Google Sans', 'Roboto', Arial, sans-serif;
+      font-size: 14px;
+      color: #202124;
+      background: #ffffff;
+      padding: 28px 28px 20px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────────── */
+    .dialog-header {
+      margin-bottom: 24px;
+    }
+
+    .dialog-header h2 {
+      font-size: 20px;
+      font-weight: 500;
+      color: #202124;
+      margin-bottom: 4px;
+    }
+
+    .dialog-header p {
+      font-size: 13px;
+      color: #5f6368;
+    }
+
+    /* ── Form groups ─────────────────────────────────────────────────────────── */
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #3c4043;
+      margin-bottom: 6px;
+      letter-spacing: 0.01em;
+    }
+
+    .required-star {
+      color: #d93025;
+      margin-left: 2px;
+    }
+
+    /* ── Inputs & selects ───────────────────────────────────────────────────── */
+    input[type="text"],
+    input[type="email"],
+    input[type="number"],
+    select {
+      display: block;
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      color: #202124;
+      background-color: #ffffff;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="text"]:focus,
+    input[type="email"]:focus,
+    input[type="number"]:focus,
+    select:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.12);
+    }
+
+    input[type="text"]::placeholder,
+    input[type="email"]::placeholder,
+    input[type="number"]::placeholder {
+      color: #9aa0a6;
+    }
+
+    input:disabled,
+    select:disabled {
+      background-color: #f8f9fa;
+      color: #80868b;
+      cursor: not-allowed;
+      border-color: #e8eaed;
+    }
+
+    /* Custom dropdown arrow */
+    select {
+      cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%235f6368' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 34px;
+    }
+
+    /* ── Rate row (Role + Agreed Hourly Rate side by side) ───────────────────── */
+    .two-col {
+      display: flex;
+      gap: 14px;
+    }
+    .two-col .form-group {
+      flex: 1;
+    }
+
+    /* ── Rate hint text ──────────────────────────────────────────────────────── */
+    .rate-hint {
+      margin-top: 5px;
+      font-size: 12px;
+      color: #5f6368;
+    }
+
+    /* ── Inline validation errors ────────────────────────────────────────────── */
+    .field-error {
+      display: none;
+      margin-top: 5px;
+      font-size: 12px;
+      color: #d93025;
+    }
+
+    .field-error.visible {
+      display: block;
+    }
+
+    input.invalid,
+    select.invalid {
+      border-color: #d93025;
+    }
+
+    input.invalid:focus,
+    select.invalid:focus {
+      box-shadow: 0 0 0 3px rgba(217, 48, 37, 0.12);
+    }
+
+    /* ── Divider ─────────────────────────────────────────────────────────────── */
+    .divider {
+      border: none;
+      border-top: 1px solid #e8eaed;
+      margin: 22px 0 18px;
+    }
+
+    /* ── Button row ──────────────────────────────────────────────────────────── */
+    .button-row {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 10px;
+    }
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 9px 22px;
+      font-size: 14px;
+      font-weight: 500;
+      font-family: inherit;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+      min-width: 88px;
+    }
+
+    /* Cancel — ghost / outlined */
+    .btn-cancel {
+      background: transparent;
+      color: #1a73e8;
+      border: 1px solid transparent;
+    }
+
+    .btn-cancel:hover:not(:disabled) {
+      background: rgba(26, 115, 232, 0.06);
+    }
+
+    .btn-cancel:active:not(:disabled) {
+      background: rgba(26, 115, 232, 0.12);
+    }
+
+    /* Submit — filled primary blue */
+    .btn-submit {
+      background-color: #1a73e8;
+      color: #ffffff;
+    }
+
+    .btn-submit:hover:not(:disabled) {
+      background-color: #1765cc;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+    }
+
+    .btn-submit:active:not(:disabled) {
+      background-color: #1557b0;
+      box-shadow: none;
+    }
+
+    .btn-submit:disabled {
+      background-color: #dadce0;
+      color: #80868b;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* ── Role loading state ───────────────────────────────────────────────────── */
+    .role-loading {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      margin-top: 6px;
+      font-size: 13px;
+      color: #5f6368;
+    }
+
+    .role-loading.visible { display: flex; }
+
+    .role-mini-spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #e8eaed;
+      border-top-color: #1a73e8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+
+    /* ── Loading spinner (inside button) ─────────────────────────────────────── */
+    .spinner {
+      display: none;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255, 255, 255, 0.45);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      flex-shrink: 0;
+    }
+
+    .spinner.visible {
+      display: block;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="dialog-header">
+    <h2>Add Contributor</h2>
+    <p>Add a new contributor to the Slicing Pie system.</p>
+  </div>
+
+  <form id="addContributorForm" novalidate>
+
+    <!-- Name -->
+    <div class="form-group">
+      <label for="name">
+        Name<span class="required-star" aria-hidden="true">*</span>
+      </label>
+      <input
+        type="text"
+        id="name"
+        name="name"
+        placeholder="Full name"
+        autocomplete="off"
+        maxlength="120"
+      >
+      <span class="field-error" id="nameError" role="alert">Name is required.</span>
+    </div>
+
+    <!-- Email -->
+    <div class="form-group">
+      <label for="email">
+        Email<span class="required-star" aria-hidden="true">*</span>
+      </label>
+      <input
+        type="email"
+        id="email"
+        name="email"
+        placeholder="contributor@example.com"
+        autocomplete="off"
+        maxlength="254"
+      >
+      <span class="field-error" id="emailError" role="alert">A valid email address is required.</span>
+    </div>
+
+    <!-- Role + Agreed Hourly Rate — side by side -->
+    <div class="two-col">
+
+      <!-- Role — options populated dynamically via getAvailableRoles() on load -->
+      <div class="form-group">
+        <label for="role">
+          Role<span class="required-star" aria-hidden="true">*</span>
+        </label>
+        <select id="role" name="role" disabled>
+          <option value="" disabled selected>— Select a role —</option>
+        </select>
+        <div class="role-loading visible" id="roleLoading" aria-live="polite">
+          <span class="role-mini-spinner" aria-hidden="true"></span>
+          <span>Loading roles…</span>
+        </div>
+        <span class="field-error" id="roleError" role="alert">Role is required.</span>
+      </div>
+
+      <!-- Agreed Hourly Rate -->
+      <div class="form-group">
+        <label for="agreedHourlyRate">
+          Agreed Hourly Rate (£/hr)<span class="required-star" aria-hidden="true">*</span>
+        </label>
+        <input
+          type="number"
+          id="agreedHourlyRate"
+          name="agreedHourlyRate"
+          placeholder="e.g. 28.85"
+          min="0"
+          step="0.01"
+        >
+        <span class="rate-hint" id="rateHint">Auto-filled from UK benchmark; override for international workers.</span>
+        <span class="field-error" id="rateError" role="alert">Agreed Hourly Rate must be 0 or greater.</span>
+      </div>
+
+    </div><!-- /.two-col -->
+
+    <!-- Status -->
+    <div class="form-group">
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        <option value="Active" selected>Active</option>
+        <option value="Separated">Separated</option>
+      </select>
+    </div>
+
+    <hr class="divider">
+
+    <div class="button-row">
+      <button type="button" class="btn-cancel" id="cancelBtn">
+        Cancel
+      </button>
+      <button type="submit" class="btn-submit" id="submitBtn">
+        <span class="spinner" id="spinner" aria-hidden="true"></span>
+        <span id="submitLabel">Add Contributor</span>
+      </button>
+    </div>
+
+  </form>
+
+  <script>
+    /* ── Helpers ────────────────────────────────────────────────────────────── */
+
+    /** Show or hide a field-level error and mark the input invalid. */
+    function setFieldError(inputId, errorId, show) {
+      var input = document.getElementById(inputId);
+      var error = document.getElementById(errorId);
+      if (show) {
+        input.classList.add('invalid');
+        error.classList.add('visible');
+      } else {
+        input.classList.remove('invalid');
+        error.classList.remove('visible');
+      }
+    }
+
+    /** Clear all field-level errors. */
+    function clearErrors() {
+      setFieldError('name',             'nameError',  false);
+      setFieldError('email',            'emailError', false);
+      setFieldError('role',             'roleError',  false);
+      setFieldError('agreedHourlyRate', 'rateError',  false);
+    }
+
+    /** Put the form into a loading state (prevents double-submission). */
+    function setLoading(loading) {
+      var submitBtn = document.getElementById('submitBtn');
+      var cancelBtn = document.getElementById('cancelBtn');
+      var spinner   = document.getElementById('spinner');
+      var label     = document.getElementById('submitLabel');
+
+      submitBtn.disabled = loading;
+      cancelBtn.disabled = loading;
+
+      document.getElementById('name').disabled             = loading;
+      document.getElementById('email').disabled            = loading;
+      document.getElementById('role').disabled             = loading;
+      document.getElementById('agreedHourlyRate').disabled = loading;
+      document.getElementById('status').disabled           = loading;
+
+      if (loading) {
+        spinner.classList.add('visible');
+        label.textContent = 'Adding…';
+      } else {
+        spinner.classList.remove('visible');
+        label.textContent = 'Add Contributor';
+      }
+    }
+
+    /* ── Cancel button ─────────────────────────────────────────────────────── */
+    document.getElementById('cancelBtn').addEventListener('click', function () {
+      google.script.host.close();
+    });
+
+    /* ── Live validation: clear error as user corrects a field ─────────────── */
+    document.getElementById('name').addEventListener('input', function () {
+      if (this.value.trim()) setFieldError('name', 'nameError', false);
+    });
+    document.getElementById('email').addEventListener('input', function () {
+      var v = this.value.trim();
+      if (v && v.indexOf('@') !== -1 && v.indexOf('.') !== -1) {
+        setFieldError('email', 'emailError', false);
+      }
+    });
+    document.getElementById('agreedHourlyRate').addEventListener('input', function () {
+      var v = parseFloat(this.value);
+      if (!isNaN(v) && v >= 0) setFieldError('agreedHourlyRate', 'rateError', false);
+    });
+
+    /* ── Role change: auto-fill hourly rate from benchmark ─────────────────── */
+    document.getElementById('role').addEventListener('change', function () {
+      /* Clear role validation error */
+      if (this.value) setFieldError('role', 'roleError', false);
+
+      /* Read the UK benchmark rate stored in the selected option's data-rate */
+      var selectedOpt = this.options[this.selectedIndex];
+      var benchmarkRate = parseFloat(selectedOpt.getAttribute('data-rate'));
+
+      var rateInput = document.getElementById('agreedHourlyRate');
+      var rateHint  = document.getElementById('rateHint');
+
+      if (!isNaN(benchmarkRate) && benchmarkRate > 0) {
+        rateInput.value = benchmarkRate.toFixed(2);
+        rateHint.textContent = 'UK benchmark rate auto-filled. Override for international workers.';
+      } else {
+        /* Role has no benchmark (e.g. Advisor, Contractor, Other) */
+        rateInput.value = '';
+        rateHint.textContent = 'No UK benchmark for this role. Enter the agreed bespoke rate.';
+      }
+      /* Clear any previous validation error on the rate field */
+      setFieldError('agreedHourlyRate', 'rateError', false);
+    });
+
+    /* ── Form submission ───────────────────────────────────────────────────── */
+    document.getElementById('addContributorForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      clearErrors();
+
+      /* --- Collect values --- */
+      var name             = document.getElementById('name').value.trim();
+      var email            = document.getElementById('email').value.trim();
+      var role             = document.getElementById('role').value;
+      var agreedHourlyRate = parseFloat(document.getElementById('agreedHourlyRate').value);
+      var status           = document.getElementById('status').value;
+
+      /* --- Client-side validation --- */
+      var valid = true;
+
+      if (!name) {
+        setFieldError('name', 'nameError', true);
+        valid = false;
+      }
+
+      if (!email || email.indexOf('@') === -1 || email.indexOf('.') === -1) {
+        setFieldError('email', 'emailError', true);
+        valid = false;
+      }
+
+      if (!role) {
+        setFieldError('role', 'roleError', true);
+        valid = false;
+      }
+
+      if (isNaN(agreedHourlyRate) || agreedHourlyRate < 0) {
+        setFieldError('agreedHourlyRate', 'rateError', true);
+        valid = false;
+      }
+
+      if (!valid) {
+        /* Focus the first invalid field for accessibility */
+        var firstInvalid = document.querySelector('.invalid');
+        if (firstInvalid) firstInvalid.focus();
+        return;
+      }
+
+      /* --- Enter loading state to prevent double-submit --- */
+      setLoading(true);
+
+      var formData = {
+        name:             name,
+        email:            email,
+        role:             role,
+        agreedHourlyRate: isNaN(agreedHourlyRate) ? 0 : agreedHourlyRate,
+        status:           status   /* 'Active' or 'Separated' */
+      };
+
+      /* --- Call backend --- */
+      google.script.run
+        .withSuccessHandler(onSuccess)
+        .withFailureHandler(onFailure)
+        .processNewContributor(formData);
+    });
+
+    /* ── Success handler ───────────────────────────────────────────────────── */
+    function onSuccess(result) {
+      alert('Contributor added successfully!\n\nAgreed hourly rate stored on profile.');
+      google.script.host.close();
+    }
+
+    /* ── Failure handler ───────────────────────────────────────────────────── */
+    function onFailure(error) {
+      /* Restore the form so the user can correct and retry */
+      setLoading(false);
+
+      var msg = (error && error.message) ? error.message : String(error);
+      alert('Error adding contributor:\n\n' + msg);
+    }
+
+    /* ── Role dropdown: populated on load via getAvailableRoles() ───────────── */
+
+    /**
+     * populateRoles(rolesArray)
+     * Success handler for google.script.run.getAvailableRoles().
+     * Receives an array of {role: string, rate: number} objects.
+     * Re-enables the Role select, resets the placeholder, and appends one
+     * <option> per object, storing the benchmark rate in data-rate so the
+     * change handler can auto-fill the Agreed Hourly Rate input.
+     *
+     * @param {{role: string, rate: number}[]} rolesArray
+     */
+    function populateRoles(rolesArray) {
+      var sel     = document.getElementById('role');
+      var loading = document.getElementById('roleLoading');
+
+      /* Rebuild option list: placeholder first, then every role from backend */
+      sel.innerHTML = '';
+
+      var placeholder = document.createElement('option');
+      placeholder.value    = '';
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      placeholder.textContent = '— Select a role —';
+      sel.appendChild(placeholder);
+
+      if (rolesArray && rolesArray.length > 0) {
+        rolesArray.forEach(function (item) {
+          /* Support both old string[] shape and new {role, rate} shape */
+          var roleName = (typeof item === 'object' && item !== null) ? item.role : String(item);
+          var roleRate = (typeof item === 'object' && item !== null) ? Number(item.rate) : 0;
+
+          var opt = document.createElement('option');
+          opt.value = roleName;
+          opt.textContent = roleName;
+          opt.setAttribute('data-rate', isNaN(roleRate) ? '0' : String(roleRate));
+          sel.appendChild(opt);
+        });
+      }
+
+      sel.disabled = false;
+      loading.classList.remove('visible');
+    }
+
+    /**
+     * showError(error)
+     * Failure handler for google.script.run.getAvailableRoles().
+     * Degrades gracefully: populates a minimal static fallback so the form
+     * remains usable, then logs a console warning (non-blocking).
+     *
+     * @param {Error|string} error
+     */
+    function showError(error) {
+      var sel     = document.getElementById('role');
+      var loading = document.getElementById('roleLoading');
+
+      /* Static fallback — rate 0 means the admin must enter the rate manually */
+      var fallbackRoles = [
+        { role: 'Developer',       rate: 24.04 },
+        { role: 'Designer',        rate: 21.63 },
+        { role: 'Executive',       rate: 57.69 },
+        { role: 'Product Manager', rate: 26.44 },
+        { role: 'Advisor',         rate: 0     },
+        { role: 'Consultant',      rate: 0     },
+        { role: 'Contractor',      rate: 0     }
+      ];
+
+      sel.innerHTML = '';
+
+      var placeholder = document.createElement('option');
+      placeholder.value    = '';
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      placeholder.textContent = '— Select a role —';
+      sel.appendChild(placeholder);
+
+      fallbackRoles.forEach(function (item) {
+        var opt = document.createElement('option');
+        opt.value = item.role;
+        opt.textContent = item.role;
+        opt.setAttribute('data-rate', String(item.rate));
+        sel.appendChild(opt);
+      });
+
+      sel.disabled = false;
+      loading.classList.remove('visible');
+
+      var msg = (error && error.message) ? error.message : String(error);
+      console.warn('getAvailableRoles() failed — using static fallback. Error:', msg);
+    }
+
+    /* ── Bootstrap ──────────────────────────────────────────────────────────── */
+    window.addEventListener('load', function () {
+      /* Focus name field immediately so the user can start typing */
+      document.getElementById('name').focus();
+
+      /* Disable the Role dropdown and show the loading indicator while
+         the async fetch is in flight. */
+      var sel     = document.getElementById('role');
+      var loading = document.getElementById('roleLoading');
+      sel.disabled = true;
+      sel.options[0].textContent = 'Loading roles…';
+      loading.classList.add('visible');
+
+      /* Fetch roles from the backend — returns [{role, rate}] */
+      google.script.run
+        .withSuccessHandler(populateRoles)
+        .withFailureHandler(showError)
+        .getAvailableRoles();
+    });
+  </script>
+</body>
+</html>

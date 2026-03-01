@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cap Table</title>
+  <style>
+    /* ── Reset ──────────────────────────────────────────────────────────────── */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* ── Base ───────────────────────────────────────────────────────────────── */
+    body {
+      font-family: 'Google Sans', 'Roboto', Arial, sans-serif;
+      font-size: 14px;
+      color: #202124;
+      background: #ffffff;
+      padding: 24px 28px 20px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────────── */
+    .dialog-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .dialog-header h2 {
+      font-size: 20px;
+      font-weight: 500;
+      color: #202124;
+    }
+
+    .header-meta {
+      font-size: 12px;
+      color: #5f6368;
+      text-align: right;
+    }
+
+    .header-meta span {
+      display: block;
+    }
+
+    /* ── Summary bar ────────────────────────────────────────────────────────── */
+    .summary-bar {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .summary-card {
+      flex: 1;
+      background: #f8f9fa;
+      border: 1px solid #e8eaed;
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+
+    .summary-card .card-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: #5f6368;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 4px;
+    }
+
+    .summary-card .card-value {
+      font-size: 22px;
+      font-weight: 500;
+      color: #202124;
+      line-height: 1.2;
+    }
+
+    /* ── Table wrapper (scrollable) ─────────────────────────────────────────── */
+    .table-wrapper {
+      border: 1px solid #e8eaed;
+      border-radius: 8px;
+      overflow: hidden;
+      overflow-y: auto;
+      max-height: 300px;
+    }
+
+    /* ── Cap table ──────────────────────────────────────────────────────────── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    /* Sticky header */
+    thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #1a73e8;
+      color: #ffffff;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 10px 14px;
+      white-space: nowrap;
+    }
+
+    thead th:first-child  { border-radius: 0; text-align: left; }
+    thead th:nth-child(2) { text-align: right; width: 130px; }
+    thead th:nth-child(3) { text-align: right; width: 110px; }
+    thead th:last-child   { text-align: center; width: 60px; }
+
+    /* Body rows */
+    tbody tr {
+      transition: background-color 0.1s;
+    }
+
+    tbody tr:nth-child(even) {
+      background-color: #f8f9fa;
+    }
+
+    tbody tr:hover {
+      background-color: #e8f0fe;
+    }
+
+    tbody td {
+      padding: 10px 14px;
+      font-size: 14px;
+      color: #202124;
+      border-bottom: 1px solid #e8eaed;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* Column alignment */
+    td.col-name  { text-align: left; }
+    td.col-num   { text-align: right; font-variant-numeric: tabular-nums; }
+    td.col-rank  { text-align: center; color: #5f6368; font-size: 13px; }
+
+    /* Equity bar cell */
+    td.col-equity {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Equity pill */
+    .equity-pill {
+      display: inline-block;
+      background: #e8f0fe;
+      color: #1a73e8;
+      border-radius: 12px;
+      padding: 2px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      min-width: 60px;
+      text-align: center;
+    }
+
+    /* ── Empty state ────────────────────────────────────────────────────────── */
+    .empty-state {
+      display: none;
+      text-align: center;
+      padding: 48px 24px;
+      color: #5f6368;
+    }
+
+    .empty-state svg {
+      display: block;
+      margin: 0 auto 16px;
+      opacity: 0.4;
+    }
+
+    .empty-state p {
+      font-size: 15px;
+      font-weight: 500;
+      margin-bottom: 6px;
+      color: #3c4043;
+    }
+
+    .empty-state small {
+      font-size: 13px;
+    }
+
+    /* ── Error banner ───────────────────────────────────────────────────────── */
+    .error-banner {
+      display: none;
+      background: #fce8e6;
+      border: 1px solid #f5c6c2;
+      border-radius: 6px;
+      padding: 12px 16px;
+      color: #c5221f;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    .error-banner.visible { display: block; }
+
+    /* ── Loading overlay ────────────────────────────────────────────────────── */
+    .loading-state {
+      text-align: center;
+      padding: 56px 24px;
+      color: #5f6368;
+      font-size: 14px;
+    }
+
+    .loading-state.hidden { display: none; }
+
+    .load-spinner {
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      border: 3px solid #e8eaed;
+      border-top-color: #1a73e8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 14px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Footer button row ──────────────────────────────────────────────────── */
+    .footer {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 20px;
+    }
+
+    .btn-close {
+      display: inline-flex;
+      align-items: center;
+      padding: 9px 22px;
+      font-size: 14px;
+      font-weight: 500;
+      font-family: inherit;
+      background: transparent;
+      color: #1a73e8;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .btn-close:hover { background: rgba(26, 115, 232, 0.06); }
+    .btn-close:active { background: rgba(26, 115, 232, 0.12); }
+  </style>
+</head>
+
+<body>
+
+  <!-- Error banner (shown on backend failure) -->
+  <div class="error-banner" id="errorBanner" role="alert"></div>
+
+  <!-- Loading state -->
+  <div class="loading-state" id="loadingState">
+    <div class="load-spinner"></div>
+    <div>Loading cap table…</div>
+  </div>
+
+  <!-- Main content (hidden until data loads) -->
+  <div id="mainContent" style="display:none;">
+
+    <div class="dialog-header">
+      <h2>Cap Table</h2>
+      <div class="header-meta">
+        <span id="lastUpdated"></span>
+      </div>
+    </div>
+
+    <!-- Summary cards -->
+    <div class="summary-bar">
+      <div class="summary-card">
+        <div class="card-label">Contributors</div>
+        <div class="card-value" id="statContributors">—</div>
+      </div>
+      <div class="summary-card">
+        <div class="card-label">Total Slices</div>
+        <div class="card-value" id="statSlices">—</div>
+      </div>
+      <div class="summary-card">
+        <div class="card-label">Largest Stake</div>
+        <div class="card-value" id="statTop">—</div>
+      </div>
+    </div>
+
+    <!-- Table or empty state -->
+    <div class="table-wrapper" id="tableWrapper">
+      <table id="capTable" aria-label="Cap Table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th style="text-align:left;">Contributor</th>
+            <th>Slices</th>
+            <th>Equity</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody">
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Empty state (rendered inside table-wrapper when needed) -->
+    <div class="empty-state" id="emptyState">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+           xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
+              fill="#5f6368"/>
+      </svg>
+      <p>No contributions yet</p>
+      <small>Record a contribution and get it approved to see the cap table.</small>
+    </div>
+
+  </div><!-- /mainContent -->
+
+  <div class="footer">
+    <button class="btn-close" id="closeBtn">Close</button>
+  </div>
+
+  <script>
+    /* ─── Helpers ───────────────────────────────────────────────────────────── */
+
+    function formatNumber(n) {
+      /* Comma-separate thousands */
+      return Number(n).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function escapeHtml(str) {
+      var d = document.createElement('div');
+      d.appendChild(document.createTextNode(String(str || '')));
+      return d.innerHTML;
+    }
+
+    function showError(msg) {
+      var banner = document.getElementById('errorBanner');
+      banner.textContent = 'Error loading cap table: ' + msg;
+      banner.classList.add('visible');
+      document.getElementById('loadingState').classList.add('hidden');
+    }
+
+    /* ─── Close button ──────────────────────────────────────────────────────── */
+    document.getElementById('closeBtn').addEventListener('click', function () {
+      google.script.host.close();
+    });
+
+    /* ─── Render cap table ──────────────────────────────────────────────────── */
+    function renderCapTable(rows) {
+      document.getElementById('loadingState').classList.add('hidden');
+      document.getElementById('mainContent').style.display = 'block';
+
+      var now = new Date();
+      document.getElementById('lastUpdated').textContent =
+        'As of ' + now.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+
+      if (!rows || rows.length === 0) {
+        document.getElementById('tableWrapper').style.display = 'none';
+        document.getElementById('emptyState').style.display  = 'block';
+        document.getElementById('statContributors').textContent = '0';
+        document.getElementById('statSlices').textContent       = '0';
+        document.getElementById('statTop').textContent          = '—';
+        return;
+      }
+
+      /* Summary stats */
+      var totalSlices = rows.reduce(function (acc, r) {
+        return acc + Number(r.totalSlices || 0);
+      }, 0);
+
+      document.getElementById('statContributors').textContent = rows.length;
+      document.getElementById('statSlices').textContent       = formatNumber(totalSlices);
+      /* Largest stake = first row (already sorted descending by backend) */
+      document.getElementById('statTop').textContent          = rows[0].equityPercent;
+
+      /* Build table rows */
+      var tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '';
+
+      rows.forEach(function (row, idx) {
+        var tr = document.createElement('tr');
+
+        /* Rank */
+        var tdRank = document.createElement('td');
+        tdRank.className = 'col-rank';
+        tdRank.textContent = idx + 1;
+        tr.appendChild(tdRank);
+
+        /* Contributor name */
+        var tdName = document.createElement('td');
+        tdName.className = 'col-name';
+        tdName.textContent = row.contributorName || row.contributorKey || '—';
+        tdName.title = row.contributorKey || '';   /* full key on hover */
+        tr.appendChild(tdName);
+
+        /* Total slices */
+        var tdSlices = document.createElement('td');
+        tdSlices.className = 'col-num';
+        tdSlices.textContent = formatNumber(row.totalSlices);
+        tr.appendChild(tdSlices);
+
+        /* Equity % pill */
+        var tdEquity = document.createElement('td');
+        tdEquity.className = 'col-equity';
+        var pill = document.createElement('span');
+        pill.className = 'equity-pill';
+        pill.textContent = row.equityPercent;
+        tdEquity.appendChild(pill);
+        tr.appendChild(tdEquity);
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    /* ─── Failure handler ───────────────────────────────────────────────────── */
+    function onLoadFailure(error) {
+      var msg = (error && error.message) ? error.message : String(error);
+      showError(msg);
+    }
+
+    /* ─── Bootstrap: call backend on page load ──────────────────────────────── */
+    window.addEventListener('load', function () {
+      google.script.run
+        .withSuccessHandler(renderCapTable)
+        .withFailureHandler(onLoadFailure)
+        .getCapTable();
+    });
+  </script>
+</body>
+</html>
