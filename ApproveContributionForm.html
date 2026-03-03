@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Approve Contribution</title>
+  <style>
+    /* ── Reset ──────────────────────────────────────────────────────────────── */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* ── Base ───────────────────────────────────────────────────────────────── */
+    body {
+      font-family: 'Google Sans', 'Roboto', Arial, sans-serif;
+      font-size: 14px;
+      color: #202124;
+      background: #ffffff;
+      padding: 28px 28px 20px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────────── */
+    .dialog-header {
+      margin-bottom: 24px;
+    }
+
+    .dialog-header h2 {
+      font-size: 20px;
+      font-weight: 500;
+      color: #202124;
+      margin-bottom: 4px;
+    }
+
+    .dialog-header p {
+      font-size: 13px;
+      color: #5f6368;
+    }
+
+    /* ── Form groups ─────────────────────────────────────────────────────────── */
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #3c4043;
+      margin-bottom: 6px;
+      letter-spacing: 0.01em;
+    }
+
+    .required-star {
+      color: #d93025;
+      margin-left: 2px;
+    }
+
+    /* ── Select ─────────────────────────────────────────────────────────────── */
+    select {
+      display: block;
+      width: 100%;
+      padding: 10px 34px 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      color: #202124;
+      background-color: #ffffff;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      appearance: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%235f6368' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.12);
+    }
+
+    select:disabled {
+      background-color: #f8f9fa;
+      color: #80868b;
+      cursor: not-allowed;
+      border-color: #e8eaed;
+    }
+
+    select.invalid { border-color: #d93025; }
+    select.invalid:focus { box-shadow: 0 0 0 3px rgba(217, 48, 37, 0.12); }
+
+    /* ── Preview card ────────────────────────────────────────────────────────── */
+    .preview-card {
+      display: none;
+      background: #f8f9fa;
+      border: 1px solid #e8eaed;
+      border-left: 4px solid #1a73e8;
+      border-radius: 4px;
+      padding: 12px 14px;
+      margin-top: 10px;
+      font-size: 13px;
+      color: #3c4043;
+    }
+
+    .preview-card.visible { display: block; }
+
+    .preview-card .preview-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .preview-card .preview-row:last-child { margin-bottom: 0; }
+
+    .preview-label {
+      color: #5f6368;
+      font-weight: 500;
+    }
+
+    .preview-value {
+      color: #202124;
+      font-weight: 500;
+      text-align: right;
+    }
+
+    .slices-highlight {
+      color: #1a73e8;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    /* ── Field error ─────────────────────────────────────────────────────────── */
+    .field-error {
+      display: none;
+      margin-top: 5px;
+      font-size: 12px;
+      color: #d93025;
+    }
+
+    .field-error.visible { display: block; }
+
+    /* ── Error banner ────────────────────────────────────────────────────────── */
+    .error-banner {
+      display: none;
+      background: #fce8e6;
+      border: 1px solid #f5c6c2;
+      border-radius: 6px;
+      padding: 12px 16px;
+      color: #c5221f;
+      font-size: 13px;
+      margin-bottom: 18px;
+    }
+
+    .error-banner.visible { display: block; }
+
+    /* ── Info banner (quorum) ────────────────────────────────────────────────── */
+    .info-banner {
+      display: none;
+      background: #e8f0fe;
+      border: 1px solid #c5d9f7;
+      border-radius: 6px;
+      padding: 12px 16px;
+      color: #1558d6;
+      font-size: 13px;
+      margin-bottom: 18px;
+    }
+
+    .info-banner.visible { display: block; }
+    .info-banner strong  { font-weight: 600; }
+
+    /* ── Loading overlay ─────────────────────────────────────────────────────── */
+    .loading-state {
+      text-align: center;
+      padding: 48px 24px;
+      color: #5f6368;
+      font-size: 14px;
+    }
+
+    .loading-state.hidden { display: none; }
+
+    .load-spinner {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border: 3px solid #e8eaed;
+      border-top-color: #1a73e8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 12px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Empty state ─────────────────────────────────────────────────────────── */
+    .empty-notice {
+      display: none;
+      text-align: center;
+      padding: 32px 16px;
+      color: #5f6368;
+      font-size: 14px;
+    }
+
+    .empty-notice p { margin-bottom: 6px; font-weight: 500; color: #3c4043; }
+    .empty-notice small { font-size: 13px; }
+
+    /* ── Divider ─────────────────────────────────────────────────────────────── */
+    .divider {
+      border: none;
+      border-top: 1px solid #e8eaed;
+      margin: 22px 0 18px;
+    }
+
+    /* ── Button row ──────────────────────────────────────────────────────────── */
+    .button-row {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 10px;
+    }
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 9px 22px;
+      font-size: 14px;
+      font-weight: 500;
+      font-family: inherit;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background-color 0.15s ease, box-shadow 0.15s ease;
+      min-width: 88px;
+    }
+
+    .btn-cancel {
+      background: transparent;
+      color: #1a73e8;
+      border: 1px solid transparent;
+    }
+
+    .btn-cancel:hover:not(:disabled) { background: rgba(26, 115, 232, 0.06); }
+    .btn-cancel:active:not(:disabled) { background: rgba(26, 115, 232, 0.12); }
+    .btn-cancel:disabled { color: #80868b; cursor: not-allowed; }
+
+    .btn-approve {
+      background-color: #1e8e3e;
+      color: #ffffff;
+    }
+
+    .btn-approve:hover:not(:disabled) {
+      background-color: #197534;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+    }
+
+    .btn-approve:active:not(:disabled) {
+      background-color: #146128;
+      box-shadow: none;
+    }
+
+    .btn-approve:disabled {
+      background-color: #dadce0;
+      color: #80868b;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* Spinner inside button */
+    .btn-spinner {
+      display: none;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255, 255, 255, 0.45);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      flex-shrink: 0;
+    }
+
+    .btn-spinner.visible { display: block; }
+  </style>
+</head>
+
+<body>
+
+  <!-- Loading state shown until getPendingContributions_ returns -->
+  <div class="loading-state" id="loadingState">
+    <div class="load-spinner"></div>
+    <div>Loading pending contributions…</div>
+  </div>
+
+  <!-- Main form (hidden until load) -->
+  <div id="mainContent" style="display:none;">
+
+    <div class="dialog-header">
+      <h2>Approve Contribution</h2>
+      <p>Select a pending contribution to approve it.</p>
+    </div>
+
+    <!-- Error / info banners -->
+    <div class="error-banner" id="errorBanner" role="alert"></div>
+    <div class="info-banner"  id="infoBanner"  role="status"></div>
+
+    <!-- Empty state (shown when no pending rows) -->
+    <div class="empty-notice" id="emptyNotice">
+      <p>No pending contributions</p>
+      <small>There are no contributions awaiting approval right now.</small>
+    </div>
+
+    <!-- Form (shown when rows exist) -->
+    <form id="approveForm" novalidate>
+
+      <div class="form-group" id="selectGroup">
+        <label for="pendingSelect">
+          Pending Contribution<span class="required-star" aria-hidden="true">*</span>
+        </label>
+        <select id="pendingSelect" name="pendingSelect">
+          <option value="">— Select a contribution —</option>
+        </select>
+        <span class="field-error" id="selectError" role="alert">
+          Please select a contribution.
+        </span>
+
+        <!-- Preview card: appears after a row is selected -->
+        <div class="preview-card" id="previewCard">
+          <div class="preview-row">
+            <span class="preview-label">Contributor</span>
+            <span class="preview-value" id="pvContributor">—</span>
+          </div>
+          <div class="preview-row">
+            <span class="preview-label">Type</span>
+            <span class="preview-value" id="pvType">—</span>
+          </div>
+          <div class="preview-row">
+            <span class="preview-label">Slices Awarded</span>
+            <span class="preview-value slices-highlight" id="pvSlices">—</span>
+          </div>
+          <div class="preview-row">
+            <span class="preview-label">Status</span>
+            <span class="preview-value" id="pvStatus">—</span>
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <div class="button-row">
+        <button type="button" class="btn-cancel" id="cancelBtn">Cancel</button>
+        <button type="submit" class="btn-approve" id="submitBtn">
+          <span class="btn-spinner" id="btnSpinner" aria-hidden="true"></span>
+          <span id="submitLabel">Approve</span>
+        </button>
+      </div>
+
+    </form>
+
+  </div><!-- /mainContent -->
+
+  <script>
+    /* ─── State ─────────────────────────────────────────────────────────────── */
+    var pendingRows = [];   /* populated by getPendingContributions_ */
+
+    /* ─── Helpers ───────────────────────────────────────────────────────────── */
+    function formatNumber(n) {
+      return Number(n).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function showError(msg) {
+      var b = document.getElementById('errorBanner');
+      b.textContent = msg;
+      b.classList.add('visible');
+    }
+
+    function clearError() {
+      document.getElementById('errorBanner').classList.remove('visible');
+    }
+
+    function showInfo(html) {
+      var b = document.getElementById('infoBanner');
+      b.innerHTML = html;
+      b.classList.add('visible');
+    }
+
+    function clearInfo() {
+      document.getElementById('infoBanner').classList.remove('visible');
+    }
+
+    function setLoading(loading) {
+      document.getElementById('submitBtn').disabled  = loading;
+      document.getElementById('cancelBtn').disabled  = loading;
+      document.getElementById('pendingSelect').disabled = loading;
+      var spinner = document.getElementById('btnSpinner');
+      var label   = document.getElementById('submitLabel');
+      if (loading) {
+        spinner.classList.add('visible');
+        label.textContent = 'Approving…';
+      } else {
+        spinner.classList.remove('visible');
+        label.textContent = 'Approve';
+      }
+    }
+
+    /* ─── Populate dropdown after backend call ──────────────────────────────── */
+    function populatePending(rows) {
+      document.getElementById('loadingState').classList.add('hidden');
+      document.getElementById('mainContent').style.display = 'block';
+
+      pendingRows = rows || [];
+
+      if (pendingRows.length === 0) {
+        document.getElementById('emptyNotice').style.display = 'block';
+        document.getElementById('approveForm').style.display = 'none';
+        return;
+      }
+
+      var select = document.getElementById('pendingSelect');
+      pendingRows.forEach(function (row) {
+        var opt = document.createElement('option');
+        opt.value = String(row.rowNum);
+        opt.textContent = 'Row ' + row.rowNum + ': ' +
+          (row.contributorName || 'Unknown') + ' — ' +
+          (row.contributionType || '?') +
+          ' (' + formatNumber(row.slicesAwarded) + ' slices)' +
+          (row.status === 'PENDING_QUORUM' ? ' [QUORUM]' : '');
+        select.appendChild(opt);
+      });
+
+      /* Focus the select for keyboard users */
+      select.focus();
+    }
+
+    function onLoadFailure(error) {
+      document.getElementById('loadingState').classList.add('hidden');
+      document.getElementById('mainContent').style.display = 'block';
+      showError('Failed to load pending contributions: ' +
+        ((error && error.message) ? error.message : String(error)));
+      document.getElementById('approveForm').style.display = 'none';
+    }
+
+    /* ─── Update preview card on selection change ───────────────────────────── */
+    document.getElementById('pendingSelect').addEventListener('change', function () {
+      clearError();
+      var sel    = this;
+      var rowNum = parseInt(sel.value, 10);
+      var card   = document.getElementById('previewCard');
+
+      sel.classList.remove('invalid');
+      document.getElementById('selectError').classList.remove('visible');
+
+      if (!sel.value) {
+        card.classList.remove('visible');
+        return;
+      }
+
+      var row = null;
+      for (var i = 0; i < pendingRows.length; i++) {
+        if (pendingRows[i].rowNum === rowNum) { row = pendingRows[i]; break; }
+      }
+
+      if (!row) { card.classList.remove('visible'); return; }
+
+      document.getElementById('pvContributor').textContent = row.contributorName || '—';
+      document.getElementById('pvType').textContent        = row.contributionType || '—';
+      document.getElementById('pvSlices').textContent      = formatNumber(row.slicesAwarded);
+      document.getElementById('pvStatus').textContent      = row.status || '—';
+      card.classList.add('visible');
+    });
+
+    /* ─── Cancel ────────────────────────────────────────────────────────────── */
+    document.getElementById('cancelBtn').addEventListener('click', function () {
+      google.script.host.close();
+    });
+
+    /* ─── Form submit ───────────────────────────────────────────────────────── */
+    document.getElementById('approveForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      clearError();
+      clearInfo();
+
+      var sel    = document.getElementById('pendingSelect');
+      var rowNum = parseInt(sel.value, 10);
+
+      if (!sel.value || isNaN(rowNum) || rowNum < 2) {
+        sel.classList.add('invalid');
+        document.getElementById('selectError').classList.add('visible');
+        sel.focus();
+        return;
+      }
+
+      setLoading(true);
+
+      google.script.run
+        .withSuccessHandler(onApproveSuccess)
+        .withFailureHandler(onApproveFailure)
+        .approveContribution(rowNum);
+    });
+
+    /* ─── Success handler ───────────────────────────────────────────────────── */
+    function onApproveSuccess(result) {
+      setLoading(false);
+
+      if (result && result.success === false && result.state === 'PENDING_QUORUM') {
+        /* Quorum in progress — inform user but keep dialog open */
+        showInfo(
+          '<strong>Approval recorded</strong> — quorum in progress.<br>' +
+          'Approvers so far: ' + result.approversCount + ' / ' + result.requiredApprovers +
+          '. Another founder must approve this same contribution.'
+        );
+        return;
+      }
+
+      /* Full approval — show summary then close */
+      var msg = 'Contribution approved successfully!';
+      if (result) {
+        msg += '\n\nContributor: ' + (result.contributorKey || '—');
+        if (typeof result.slicesAwarded === 'number') {
+          msg += '\nSlices: ' + formatNumber(result.slicesAwarded);
+        }
+        if (result.equityPercent) {
+          msg += '\nNew Equity: ' + result.equityPercent;
+        }
+      }
+      alert(msg);
+      google.script.host.close();
+    }
+
+    /* ─── Failure handler ───────────────────────────────────────────────────── */
+    function onApproveFailure(error) {
+      setLoading(false);
+      showError('Approval failed: ' +
+        ((error && error.message) ? error.message : String(error)));
+    }
+
+    /* ─── Bootstrap ─────────────────────────────────────────────────────────── */
+    window.addEventListener('load', function () {
+      google.script.run
+        .withSuccessHandler(populatePending)
+        .withFailureHandler(onLoadFailure)
+        .getPendingContributions();
+    });
+  </script>
+</body>
+</html>

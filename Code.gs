@@ -122,13 +122,14 @@ const CONFIG = {
   ],
 
   CONTRIBUTORS_SCHEMA: [
-    { name: 'ContributorKey', type: 'string' },
-    { name: 'Name', type: 'string' },
-    { name: 'Email', type: 'string' },
-    { name: 'Role', type: 'string' },
-    { name: 'JoinDate', type: 'date' },
-    { name: 'Status', type: 'string' },
-    { name: 'Notes', type: 'string' }
+    { name: 'ContributorKey',   type: 'string' },
+    { name: 'Name',            type: 'string' },
+    { name: 'Email',           type: 'string' },
+    { name: 'Role',            type: 'string' },
+    { name: 'JoinDate',        type: 'date'   },
+    { name: 'Status',          type: 'string' },
+    { name: 'Notes',           type: 'string' },
+    { name: 'AgreedHourlyRate', type: 'number' }   // Col 8 — bespoke FMV rate (£/hr)
   ],
 
   CONFIG_SCHEMA: [
@@ -182,6 +183,49 @@ CONFIG.AUDIT_SCHEMA_POSITIONS = {};
 CONFIG.AUDIT_LOG_SCHEMA.forEach((col, idx) => {
   CONFIG.AUDIT_SCHEMA_POSITIONS[col.name] = idx;
 });
+
+// UK 2026 Role Rate Card — salary benchmarks per role (used by getAvailableRoles_() and
+// the Add-Contributor / Record-Contribution HTML dialogs for the Role dropdown).
+// Columns: [Role, SalaryMin, SalaryMax, AnnualHours, HourlyMin, HourlyMax, Description]
+// NOTE: This is intentionally separate from RATE_CARD_DATA below, which seeds the
+//       "Rate Card" sheet with contribution-type multipliers (TIME, CASH, etc.).
+const ROLE_RATE_CARD_DATA = [
+  ['CEO',                   120000, 180000, 2080, 57.69, 86.54,  'C-level executive'],
+  ['CTO',                   100000, 150000, 2080, 48.08, 72.12,  'C-level technical lead'],
+  ['CFO',                    90000, 140000, 2080, 43.27, 67.31,  'C-level financial officer'],
+  ['COO',                    95000, 145000, 2080, 45.67, 69.71,  'C-level operations officer'],
+  ['VP Engineering',         80000, 120000, 2080, 38.46, 57.69,  'Senior engineering leadership'],
+  ['VP Product',             75000, 115000, 2080, 36.06, 55.29,  'Senior product leadership'],
+  ['VP Sales',               70000, 110000, 2080, 33.65, 52.88,  'Senior sales leadership'],
+  ['Senior Developer',       60000,  90000, 2080, 28.85, 43.27,  'Senior engineering IC'],
+  ['Developer',              50000,  75000, 2080, 24.04, 36.06,  'Mid-level engineering IC'],
+  ['Junior Developer',       35000,  50000, 2080, 16.83, 24.04,  'Entry-level engineering'],
+  ['Product Manager',        55000,  85000, 2080, 26.44, 40.87,  'Product management'],
+  ['Designer',               45000,  70000, 2080, 21.63, 33.65,  'UX/UI design'],
+  ['Marketing Manager',      50000,  80000, 2080, 24.04, 38.46,  'Marketing leadership'],
+  ['Sales Manager',          55000,  85000, 2080, 26.44, 40.87,  'Sales management'],
+  ['Account Executive',      40000,  65000, 2080, 19.23, 31.25,  'Sales IC'],
+  ['Customer Success',       38000,  60000, 2080, 18.27, 28.85,  'Customer support leadership'],
+  ['Support Specialist',     28000,  42000, 2080, 13.46, 20.19,  'Customer support IC'],
+  ['Operations Manager',     45000,  70000, 2080, 21.63, 33.65,  'Operations management'],
+  ['HR Manager',             42000,  65000, 2080, 20.19, 31.25,  'Human resources'],
+  ['Finance Manager',        48000,  75000, 2080, 23.08, 36.06,  'Finance & accounting'],
+  ['Legal Counsel',          60000,  95000, 2080, 28.85, 45.67,  'Legal advisor'],
+  ['Data Scientist',         55000,  90000, 2080, 26.44, 43.27,  'Data analytics'],
+  ['DevOps Engineer',        52000,  82000, 2080, 25.00, 39.42,  'Infrastructure engineering'],
+  ['QA Engineer',            40000,  62000, 2080, 19.23, 29.81,  'Quality assurance'],
+  ['Business Analyst',       42000,  65000, 2080, 20.19, 31.25,  'Business analysis'],
+  ['Content Writer',         32000,  50000, 2080, 15.38, 24.04,  'Content creation'],
+  ['Social Media Manager',   35000,  55000, 2080, 16.83, 26.44,  'Social media management'],
+  ['Recruiter',              38000,  58000, 2080, 18.27, 27.88,  'Recruitment specialist'],
+  ['Office Manager',         30000,  45000, 2080, 14.42, 21.63,  'Office administration'],
+  ['Intern',                 18000,  25000, 1040, 17.31, 24.04,  'Internship position'],
+  ['Advisor',                    0, 150000,  520,  0.00, 288.46, 'Strategic advisor (hourly)'],
+  ['Consultant',                 0, 200000, 1040,  0.00, 192.31, 'Specialized consultant'],
+  ['Contractor',                 0, 100000, 2080,  0.00,  48.08, 'Contract worker'],
+  ['Board Member',               0,  50000,  260,  0.00, 192.31, 'Board governance role'],
+  ['Other',                        0,      0, 2080,  0.00,   0.00, 'Custom bespoke role']
+];
 
 // Rate Card seed data (default contribution types)
 const RATE_CARD_DATA = [
@@ -547,7 +591,14 @@ function computeRowSignature_(rowData, secret) {
     quantity: round2_(rowData.Quantity),
     slicesAwarded: round2_(rowData.SlicesAwarded),
     totalSlices: round2_(rowData.TotalSlices),
-    equityPercent: String(rowData.EquityPercent || '0.00%'),
+    // Normalise EquityPercent: if Sheets returns a raw fraction (e.g. 0.1),
+    // convert to "NN.NN%" to match the string written by formatEquityPercent_().
+    equityPercent: (function() {
+      var ep = rowData.EquityPercent;
+      if (typeof ep === 'number') return (ep * 100).toFixed(2) + '%';
+      var s = String(ep || '');
+      return s !== '' ? s : '0.00%';
+    })(),
     evidenceURL: String(rowData.EvidenceURL || ''),
     notes: String(rowData.Notes || '')
   };
@@ -1425,6 +1476,39 @@ function isValidEmail_(email) {
 }
 
 /**
+ * Looks up the Email address for a given ContributorKey from the Contributors sheet.
+ * Used by approveContribution and rejectContribution to send email notifications
+ * now that ContributorKey is no longer an email address (format: NAME_TIMESTAMP).
+ *
+ * @param  {string} contributorKey  The immutable ContributorKey (e.g. JANE_DOE_1708223381922).
+ * @returns {string|null}           The contributor's Email string, or null if not found.
+ */
+function getContributorEmailByKey_(contributorKey) {
+  try {
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Contributors');
+    if (!sheet) return null;
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return null;   // header-only
+
+    // Schema: [ContributorKey(0), Name(1), Email(2), Role(3), JoinDate(4), Status(5), Notes(6)]
+    const data = sheet.getRange(2, 1, lastRow - 1, CONFIG.CONTRIBUTORS_SCHEMA.length).getValues();
+
+    for (let i = 0; i < data.length; i++) {
+      if (String(data[i][0]).trim() === String(contributorKey).trim()) {
+        return String(data[i][2]).trim() || null;   // col 2 = Email
+      }
+    }
+    return null;   // key not found
+
+  } catch (err) {
+    console.error('getContributorEmailByKey_ error:', err);
+    return null;   // non-fatal — email is optional; never block approval/rejection
+  }
+}
+
+/**
  * Validate URL format.
  */
 function isValidURL_(url) {
@@ -1703,8 +1787,10 @@ function processContribution_(contributorKey, contributionType, baseValue, quant
   notes = String(notes || '').trim();
   
   // Validation
-  if (!isValidEmail_(contributorKey)) {
-    throw new Error(`Invalid contributor email: "${contributorKey}"`);
+  // NOTE: ContributorKey is no longer an email address (format: NAME_TIMESTAMP).
+  // The legacy isValidEmail_ check has been replaced with a simple presence check.
+  if (!contributorKey || contributorKey === '') {
+    throw new Error(`Invalid contributor key.`);
   }
   
   if (isNaN(baseValue) || baseValue <= 0) {
@@ -1780,7 +1866,29 @@ function processContribution_(contributorKey, contributionType, baseValue, quant
       slicesAwarded: slicesAwarded,
       multiplier: multiplier
     });
-    
+
+    // Notify all founders that a new contribution is pending review
+    try {
+      const approverList = CONFIG.FOUNDER_APPROVERS || [];
+      if (approverList.length > 0) {
+        const subj = 'Slicing Pie: New Contribution Pending Review';
+        const body =
+          'A new contribution has been submitted and is awaiting review.\n\n' +
+          'Contributor : ' + contributorName + ' (' + contributorKey + ')\n' +
+          'Type        : ' + contributionType + '\n' +
+          'Slices      : ' + slicesAwarded.toFixed(2) + '\n' +
+          'Request ID  : ' + requestId + '\n\n' +
+          'Open the spreadsheet and use Slicing Pie > Workflow > Review Contributions to act.';
+        approverList.forEach(function(addr) {
+          try {
+            if (addr && isValidEmail_(addr)) MailApp.sendEmail({ to: addr, subject: subj, body: body });
+          } catch (e) { Logger.log('[processContribution_] Founder email failed (' + addr + '): ' + e.message); }
+        });
+      }
+    } catch (emailErr) {
+      Logger.log('[processContribution_] Founder notification failed: ' + emailErr.message);
+    }
+
     return {
       success: true,
       requestId: requestId,
@@ -2058,9 +2166,10 @@ function approveContribution(pendingRowNum, skipHighValueCheck = false, bypassRe
     
     // Optional: Send email notification
     try {
-      if (isValidEmail_(contributorKey)) {
+      const targetEmail = getContributorEmailByKey_(contributorKey);
+      if (targetEmail && isValidEmail_(targetEmail)) {
         MailApp.sendEmail({
-          to: contributorKey,
+          to: targetEmail,
           subject: 'Slicing Pie: Contribution Approved',
           body: `Your contribution has been approved!\n\n` +
                 `Type: ${contributionType}\n` +
@@ -2209,9 +2318,10 @@ function rejectContribution(pendingRowNum, reason, bypassRequestIdCheck = false)
     
     // Optional: Send email notification
     try {
-      if (isValidEmail_(contributorKey)) {
+      const targetEmail = getContributorEmailByKey_(contributorKey);
+      if (targetEmail && isValidEmail_(targetEmail)) {
         MailApp.sendEmail({
-          to: contributorKey,
+          to: targetEmail,
           subject: 'Slicing Pie: Contribution Rejected',
           body: `Your contribution has been rejected.\n\n` +
                 `Reason: ${reason}\n` +
@@ -2331,7 +2441,7 @@ function applyEquityDelta_(contributorKey, contributorName, contributionType, mu
  * 
  * @returns {Array} - [{contributorKey, contributorName, totalSlices, equityPercent}, ...]
  */
-function getCapTable_() {
+function getCapTable() {
   const masterSheet = ensureMasterSheet_();
   const colMap = getColMap_(masterSheet, CONFIG.MASTER_SCHEMA);
   const lastRow = masterSheet.getLastRow();
@@ -2400,7 +2510,29 @@ function verifyAllRowSignatures_() {
   for (let i = 0; i < data.length; i++) {
     const rowNum = i + 2;
     const row = data[i];
-    
+
+    // Spec 3: normalise values read from the sheet so they match the canonical
+    // form used when the signature was originally computed.
+    //
+    // EquityPercent: Sheets may return a raw fraction (e.g. 0.1) when the cell
+    // has a percentage format applied, or a pre-formatted string (e.g. "10.00%")
+    // when written directly.  computeRowSignature_ passes it through
+    // String(rowData.EquityPercent), so we must guarantee it arrives as the
+    // same "NN.NN%" string that formatEquityPercent_() produced at write time.
+    const rawEquity = row[colMap.EquityPercent];
+    let normalisedEquity;
+    if (typeof rawEquity === 'number') {
+      // Sheets returned a fraction (0–1) because the cell has % formatting.
+      // Multiply by 100 to recover the percentage value, then reformat.
+      normalisedEquity = (rawEquity * 100).toFixed(2) + '%';
+    } else {
+      // Already a string — pass straight through (handles "10.00%" correctly).
+      normalisedEquity = String(rawEquity || '0.00%');
+    }
+
+    // Timestamp: Sheets always returns a Date object for date-formatted cells;
+    // computeRowSignature_ formats it with Utilities.formatDate when it is a
+    // Date, so no coercion is needed here — just pass the raw value.
     const rowData = {
       Timestamp: row[colMap.Timestamp],
       ContributorKey: row[colMap.ContributorKey],
@@ -2411,7 +2543,7 @@ function verifyAllRowSignatures_() {
       Quantity: row[colMap.Quantity],
       SlicesAwarded: row[colMap.SlicesAwarded],
       TotalSlices: row[colMap.TotalSlices],
-      EquityPercent: row[colMap.EquityPercent],
+      EquityPercent: normalisedEquity,
       EvidenceURL: row[colMap.EvidenceURL],
       Notes: row[colMap.Notes]
     };
@@ -2952,175 +3084,119 @@ function verifyDecisionSignaturesUI_() {
 
 /**
  * Menu item: View Cap Table.
+ * Opens a modern HTML dashboard (ViewCapTable.html) that calls getCapTable()
+ * from the client side, replacing the legacy plain-text ui.alert().
  */
 function viewCapTableUI_() {
   try {
-    const capTable = getCapTable_();
-    
-    if (capTable.length === 0) {
-      SpreadsheetApp.getUi().alert(
-        'Cap Table',
-        'No contributions yet. Cap table is empty.',
-        SpreadsheetApp.getUi().ButtonSet.OK
-      );
-      return;
-    }
-    
-    const totalSlices = capTable.reduce((sum, c) => sum + c.totalSlices, 0);
-    
-    let message = `Total Slices: ${totalSlices.toFixed(2)}\n\n`;
-    message += 'Contributor | Slices | Equity %\n';
-    message += '═'.repeat(50) + '\n';
-    
-    for (const c of capTable) {
-      const name = c.contributorName.substring(0, 20).padEnd(20);
-      const slices = c.totalSlices.toFixed(2).padStart(10);
-      const equity = c.equityPercent.padStart(8);
-      message += `${name} | ${slices} | ${equity}\n`;
-    }
-    
-    SpreadsheetApp.getUi().alert(
-      'Cap Table',
-      message,
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
-    
+    const html = HtmlService.createHtmlOutputFromFile('ViewCapTable')
+      .setWidth(600)
+      .setHeight(500)
+      .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+    SpreadsheetApp.getUi().showModalDialog(html, 'Cap Table');
   } catch (err) {
+    console.error('viewCapTableUI_ error:', err);
     SpreadsheetApp.getUi().alert(
-      'Cap Table Failed',
-      `Error: ${err.message}`,
+      'Error',
+      'Failed to open Cap Table dialog.\n\nError: ' + err.message +
+        '\n\nPlease ensure ViewCapTable.html is deployed.',
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   }
 }
 
 /**
- * FIX 3 (v6.0.34j): UI wrapper for approve - prompts user for row number.
- * 
+ * Reads the Pending sheet and returns rows whose Status is PENDING or PENDING_QUORUM.
+ * Called from ApproveContributionForm.html and RejectContributionForm.html via
+ * google.script.run.
+ *
+ * @returns {Array<Object>} [{rowNum, contributorName, contributionType, slicesAwarded, status}]
+ */
+function getPendingContributions() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Pending');
+    if (!sheet) {
+      throw new Error('Pending sheet not found. Please run "Initialize System" first.');
+    }
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      return []; // header-only, no data rows
+    }
+
+    const colMap = getColMap_(sheet, CONFIG.PENDING_SCHEMA);
+    const data   = sheet.getRange(2, 1, lastRow - 1, CONFIG.PENDING_SCHEMA.length).getValues();
+    const result = [];
+
+    for (let i = 0; i < data.length; i++) {
+      const row    = data[i];
+      const status = String(row[colMap.Status] || '').trim().toUpperCase();
+
+      if (status !== 'PENDING' && status !== 'PENDING_QUORUM') continue;
+
+      result.push({
+        rowNum:           i + 2,   // 1-indexed, +1 for header
+        contributorName:  String(row[colMap.ContributorName]  || ''),
+        contributionType: String(row[colMap.ContributionType] || ''),
+        baseValue:        Number(row[colMap.BaseValue]        || 0),
+        quantity:         Number(row[colMap.Quantity]         || 0),
+        slicesAwarded:    Number(row[colMap.SlicesAwarded]    || 0),
+        status:           String(row[colMap.Status]           || '')
+      });
+    }
+
+    return result;
+
+  } catch (err) {
+    console.error('getPendingContributions error:', err);
+    throw new Error('Failed to fetch pending contributions: ' + err.message);
+  }
+}
+
+/**
+ * Menu item: Approve Contribution.
+ * Opens ApproveContributionForm.html — replaces the legacy ui.prompt() row-number dialog.
  * Called from menu: "Slicing Pie > Workflow > Approve (Prompt)"
  */
 function approveContributionUI_() {
   try {
-    const ui = SpreadsheetApp.getUi();
-    
-    // Prompt for row number
-    const response = ui.prompt(
-      'Approve Contribution',
-      'Enter the Pending sheet row number to approve (≥2):',
-      ui.ButtonSet.OK_CANCEL
-    );
-    
-    if (response.getSelectedButton() !== ui.Button.OK) {
-      ui.alert('Approval cancelled.');
-      return;
-    }
-    
-    const rowNum = parseInt(response.getResponseText().trim(), 10);
-    
-    // Validate input
-    if (!Number.isInteger(rowNum) || rowNum < 2) {
-      ui.alert('Error', `Invalid row number: "${response.getResponseText()}". Must be ≥2.`, ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Call core function with validated row number
-    const result = approveContribution(rowNum);
-
-    // Handle quorum progress vs. final approval
-    if (result && result.state === 'PENDING_QUORUM') {
-      ui.alert(
-        'Approval Recorded',
-        `Quorum progress: ${result.approversCount}/${result.requiredApprovers}\n\n` +
-        'This contribution is not finalized yet. Ask another founder to approve the same row.',
-        ui.ButtonSet.OK
-      );
-      return;
-    }
-
-    
-    // Show success message
-    ui.alert(
-      'Approval Complete',
-      `Contribution approved successfully!\n\n` +
-      `Contributor: ${result.contributorKey}\n` +
-      `Slices: ${result.slicesAwarded.toFixed(2)}\n` +
-      `Equity: ${result.equityPercent}\n` +
-      `Decision Signature: ${result.decisionSignature.substring(0, 16)}...\n` +
-      `Master Row Signature: ${result.masterRowSignature.substring(0, 16)}...`,
-      ui.ButtonSet.OK
-    );
-    
+    const html = HtmlService.createHtmlOutputFromFile('ApproveContributionForm')
+      .setWidth(450)
+      .setHeight(400)
+      .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+    SpreadsheetApp.getUi().showModalDialog(html, 'Approve Contribution');
   } catch (err) {
-    const ui = SpreadsheetApp.getUi();
-    ui.alert('Approval Failed', `Error: ${err.message}\n\nCheck execution log for details.`, ui.ButtonSet.OK);
-    Logger.log(`[approveContributionUI_] Error: ${err.message}\n${err.stack}`);
+    console.error('approveContributionUI_ error:', err);
+    SpreadsheetApp.getUi().alert(
+      'Error',
+      'Failed to open Approve Contribution dialog.\n\nError: ' + err.message +
+        '\n\nPlease ensure ApproveContributionForm.html is deployed.',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
   }
 }
 
 /**
- * FIX 3 (v6.0.34j): UI wrapper for reject - prompts for row number and reason.
- * 
+ * Menu item: Reject Contribution.
+ * Opens RejectContributionForm.html — replaces the legacy two-step ui.prompt() dialog.
  * Called from menu: "Slicing Pie > Workflow > Reject (Prompt)"
  */
 function rejectContributionUI_() {
   try {
-    const ui = SpreadsheetApp.getUi();
-    
-    // Prompt for row number
-    const rowResponse = ui.prompt(
-      'Reject Contribution - Step 1',
-      'Enter the Pending sheet row number to reject (≥2):',
-      ui.ButtonSet.OK_CANCEL
-    );
-    
-    if (rowResponse.getSelectedButton() !== ui.Button.OK) {
-      ui.alert('Rejection cancelled.');
-      return;
-    }
-    
-    const rowNum = parseInt(rowResponse.getResponseText().trim(), 10);
-    
-    if (!Number.isInteger(rowNum) || rowNum < 2) {
-      ui.alert('Error', `Invalid row number: "${rowResponse.getResponseText()}". Must be ≥2.`, ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Prompt for rejection reason
-    const reasonResponse = ui.prompt(
-      'Reject Contribution - Step 2',
-      `Enter rejection reason for row ${rowNum}:`,
-      ui.ButtonSet.OK_CANCEL
-    );
-    
-    if (reasonResponse.getSelectedButton() !== ui.Button.OK) {
-      ui.alert('Rejection cancelled.');
-      return;
-    }
-    
-    const reason = reasonResponse.getResponseText().trim();
-    
-    if (!reason || reason.length < 3) {
-      ui.alert('Error', 'Rejection reason must be at least 3 characters.', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Call core function
-    const result = rejectContribution(rowNum, reason);
-    
-    // Show success message
-    ui.alert(
-      'Rejection Complete',
-      `Contribution rejected successfully!\n\n` +
-      `Contributor: ${result.contributorKey}\n` +
-      `Reason: ${reason}\n` +
-      `Decision Signature: ${result.decisionSignature.substring(0, 16)}...`,
-      ui.ButtonSet.OK
-    );
-    
+    const html = HtmlService.createHtmlOutputFromFile('RejectContributionForm')
+      .setWidth(450)
+      .setHeight(450)
+      .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+    SpreadsheetApp.getUi().showModalDialog(html, 'Reject Contribution');
   } catch (err) {
-    const ui = SpreadsheetApp.getUi();
-    ui.alert('Rejection Failed', `Error: ${err.message}\n\nCheck execution log for details.`, ui.ButtonSet.OK);
-    Logger.log(`[rejectContributionUI_] Error: ${err.message}\n${err.stack}`);
+    console.error('rejectContributionUI_ error:', err);
+    SpreadsheetApp.getUi().alert(
+      'Error',
+      'Failed to open Reject Contribution dialog.\n\nError: ' + err.message +
+        '\n\nPlease ensure RejectContributionForm.html is deployed.',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
   }
 }
 
@@ -3148,10 +3224,10 @@ function onOpen() {
         .addItem('Audit Protections', 'auditProtectionsUI_')
         .addItem('Verify Audit Chain', 'verifyAuditChainUI_')
         .addItem('Rebuild Pending Queue (Stub)', 'rebuildPendingQueueUI_')
-        .addItem('Rebuild Master Totals (Stub)', 'rebuildMasterTotalsUI_'))
+        .addItem('Rebuild Master Totals (Stub)', 'rebuildMasterTotalsUI_')
+        .addItem('Migrate Contributors to 8 Cols', 'migrateContributorsTo8Cols_'))
       .addSubMenu(ui.createMenu('Workflow')
-        .addItem('Approve (Prompt)', 'approveContributionUI_')
-        .addItem('Reject (Prompt)', 'rejectContributionUI_'))
+        .addItem('Review Contributions', 'reviewContributionsUI_'))
       .addSubMenu(ui.createMenu('Migration')
         .addItem('Migrate Pending RequestIds', 'migratePendingRequestIds_')
         .addItem('Re-sign Existing Decisions', 'resignExistingDecisions_'))
@@ -3184,33 +3260,67 @@ function onOpen() {
 /**
  * UI wrapper to add a new contributor (parameterless, safe for menu)
  */
+/**
+ * UI wrapper to add a contributor (parameterless, safe for menu)
+ * Uses modern HTML dialog instead of sequential prompts
+ */
 function addContributorUI_() {
   try {
-    const ui = SpreadsheetApp.getUi();
+    const html = HtmlService.createHtmlOutputFromFile('AddContributorForm')
+      .setWidth(450)
+      .setHeight(550)
+      .setSandboxMode(HtmlService.SandboxMode.IFRAME);
     
-    // Prompt for contributor details
-    const nameResponse = ui.prompt('Add Contributor', 'Enter contributor name:', ui.ButtonSet.OK_CANCEL);
-    if (nameResponse.getSelectedButton() !== ui.Button.OK) return;
-    const name = nameResponse.getResponseText().trim();
+    SpreadsheetApp.getUi().showModalDialog(html, 'Add Contributor');
+  } catch (err) {
+    console.error('addContributorUI_ error:', err);
+    SpreadsheetApp.getUi().alert(
+      'Error',
+      'Failed to open Add Contributor dialog.\n\nError: ' + err.message,
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
+}
+
+/**
+ * Backend handler for processing new contributor form submission
+ * Called from AddContributorForm.html via google.script.run
+ * 
+ * @param {Object} formData - Form data from HTML dialog
+ * @param {string} formData.name - Contributor name
+ * @param {string} formData.email - Contributor email
+ * @param {string} formData.role - Contributor role
+ * @param {string} formData.status - Contributor status (Active/Separated)
+ * @returns {Object} Result object with contributorKey and name
+ */
+function processNewContributor(formData) {
+  try {
+    // Validate input
+    if (!formData || typeof formData !== 'object') {
+      throw new Error('Invalid form data received');
+    }
+    
+    const name             = String(formData.name   || '').trim();
+    const email            = String(formData.email  || '').trim();
+    const role             = String(formData.role   || '').trim();
+    const status           = String(formData.status || 'Active').trim();
+    const agreedHourlyRate = Number(formData.agreedHourlyRate) || 0;
+    
+    // Validation
     if (!name) {
-      ui.alert('Error', 'Name cannot be empty.', ui.ButtonSet.OK);
-      return;
+      throw new Error('Name is required');
     }
     
-    const emailResponse = ui.prompt('Add Contributor', 'Enter contributor email:', ui.ButtonSet.OK_CANCEL);
-    if (emailResponse.getSelectedButton() !== ui.Button.OK) return;
-    const email = emailResponse.getResponseText().trim();
     if (!email || !email.includes('@')) {
-      ui.alert('Error', 'Please enter a valid email address.', ui.ButtonSet.OK);
-      return;
+      throw new Error('Valid email is required');
     }
     
-    const roleResponse = ui.prompt('Add Contributor', 'Enter contributor role (e.g., Developer, Designer):', ui.ButtonSet.OK_CANCEL);
-    if (roleResponse.getSelectedButton() !== ui.Button.OK) return;
-    const role = roleResponse.getResponseText().trim();
     if (!role) {
-      ui.alert('Error', 'Role cannot be empty.', ui.ButtonSet.OK);
-      return;
+      throw new Error('Role is required');
+    }
+    
+    if (!['Active', 'Separated'].includes(status)) {
+      throw new Error('Status must be either Active or Separated');
     }
     
     // Generate unique ContributorKey
@@ -3220,90 +3330,276 @@ function addContributorUI_() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName('Contributors');
     if (!sheet) {
-      ui.alert('Error', 'Contributors sheet not found. Please run "Initialize System" first.', ui.ButtonSet.OK);
-      return;
+      throw new Error('Contributors sheet not found. Please run "Initialize System" first.');
     }
     
-    // Append new contributor row
-    sheet.appendRow([contributorKey, name, email, role, new Date(), 'Active', '']);
+    // Verify schema matches expected structure
+    // CONFIG.CONTRIBUTORS_SCHEMA: [ContributorKey, Name, Email, Role, JoinDate, Status, Notes, AgreedHourlyRate]
+    if (CONFIG.CONTRIBUTORS_SCHEMA && CONFIG.CONTRIBUTORS_SCHEMA.length !== 8) {
+      throw new Error('Contributors schema mismatch. Expected 8 columns.');
+    }
+
+    // Append new contributor row matching schema
+    sheet.appendRow([
+      contributorKey,    // Col 1 ContributorKey
+      name,              // Col 2 Name
+      email,             // Col 3 Email
+      role,              // Col 4 Role
+      new Date(),        // Col 5 JoinDate
+      status,            // Col 6 Status
+      '',                // Col 7 Notes (empty)
+      agreedHourlyRate   // Col 8 AgreedHourlyRate (£/hr)
+    ]);
     
-    ui.alert(
-      'Contributor Added',
-      'Contributor added successfully!\n\n' +
-      'ContributorKey: ' + contributorKey + '\n' +
-      'Name: ' + name + '\n' +
-      'Email: ' + email + '\n' +
-      'Role: ' + role,
-      ui.ButtonSet.OK
-    );
+    console.log('Contributor added successfully:', contributorKey);
+    
+    // Return success result
+    return {
+      success: true,
+      contributorKey: contributorKey,
+      name: name,
+      email: email,
+      role: role,
+      status: status
+    };
+    
   } catch (err) {
-    console.error('addContributorUI_ error:', err);
-    SpreadsheetApp.getUi().alert(
-      'Error Adding Contributor',
-      'Failed to add contributor.\n\nError: ' + err.message,
-      SpreadsheetApp.getUi().ButtonSet.OK
-    );
+    console.error('processNewContributor error:', err);
+    throw new Error('Failed to add contributor: ' + err.message);
   }
 }
 
 /**
- * UI wrapper to rename a contributor (parameterless, safe for menu)
+ * Retrieves list of contributors for the Rename Contributor dropdown.
+ * Called from RenameContributorForm.html via google.script.run.
+ *
+ * Sort order: Active contributors first (alphabetical), then Separated (alphabetical).
+ *
+ * @returns {Array<Object>} Array of contributor objects:
+ *   [{key, name, email, role, status, display}, ...]
+ *   where display = "Name (ContributorKey)"
  */
-function renameContributorUI_() {
+function getContributorsList() {
   try {
-    const ui = SpreadsheetApp.getUi();
-    
-    // Prompt for ContributorKey
-    const keyResponse = ui.prompt('Rename Contributor', 'Enter ContributorKey to rename:', ui.ButtonSet.OK_CANCEL);
-    if (keyResponse.getSelectedButton() !== ui.Button.OK) return;
-    const contributorKey = keyResponse.getResponseText().trim();
-    if (!contributorKey) {
-      ui.alert('Error', 'ContributorKey cannot be empty.', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Prompt for new name
-    const nameResponse = ui.prompt('Rename Contributor', 'Enter new name:', ui.ButtonSet.OK_CANCEL);
-    if (nameResponse.getSelectedButton() !== ui.Button.OK) return;
-    const newName = nameResponse.getResponseText().trim();
-    if (!newName) {
-      ui.alert('Error', 'New name cannot be empty.', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Get Contributors sheet
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName('Contributors');
+
     if (!sheet) {
-      ui.alert('Error', 'Contributors sheet not found. Please run "Initialize System" first.', ui.ButtonSet.OK);
-      return;
+      throw new Error('Contributors sheet not found. Please run "Initialize System" first.');
     }
-    
-    // Find contributor row
-    const data = sheet.getDataRange().getValues();
-    let found = false;
-    for (let i = 1; i < data.length; i++) {
-      if (data[i][0] === contributorKey) {
-        sheet.getRange(i + 1, 2).setValue(newName); // Update Name column (B)
-        found = true;
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      // Header-only – no contributors yet
+      return [];
+    }
+
+    // Read all data rows (skip header at index 0)
+    // Schema: [ContributorKey, Name, Email, Role, JoinDate, Status, Notes]  (7 cols)
+    const data = sheet.getRange(2, 1, lastRow - 1, CONFIG.CONTRIBUTORS_SCHEMA.length).getValues();
+    const contributors = [];
+
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const key = String(row[0] || '').trim();
+
+      // Skip rows without a ContributorKey (empty / malformed rows)
+      if (!key) continue;
+
+      const name   = String(row[1] || '');
+      const email  = String(row[2] || '');
+      const role   = String(row[3] || '');
+      const status = String(row[5] || 'Active');
+
+      contributors.push({
+        key:     key,
+        name:    name,
+        email:   email,
+        role:    role,
+        status:  status,
+        display: name + ' (' + key + ')'
+      });
+    }
+
+    // Sort: Active first, then Separated; within each group sort alphabetically by name
+    contributors.sort(function (a, b) {
+      const aActive = a.status === 'Active';
+      const bActive = b.status === 'Active';
+      if (aActive && !bActive) return -1;
+      if (!aActive && bActive) return 1;
+      return a.name.localeCompare(b.name);
+    });
+
+    return contributors;
+
+  } catch (err) {
+    console.error('getContributorsList error:', err);
+    throw new Error('Failed to fetch contributors list: ' + err.message);
+  }
+}
+
+/**
+ * Returns an array of available role names sourced from ROLE_RATE_CARD_DATA.
+ * Called from AddContributorForm.html and RecordContributionForm.html via
+ * google.script.run to populate the Role dropdown dynamically on page load.
+ *
+ * @returns {string[]} Alphabetically-ordered list of role names.
+ */
+function getAvailableRoles_() {
+  try {
+    // Return objects so the frontend can pre-fill the AgreedHourlyRate input.
+    // Shape: { role: string, rate: number }  where rate = HourlyMin (index 4).
+    return ROLE_RATE_CARD_DATA.map(function (row) {
+      return { role: row[0], rate: Number(row[4]) || 0 };
+    });
+  } catch (err) {
+    console.error('getAvailableRoles_ error:', err);
+    throw new Error('Failed to fetch available roles: ' + err.message);
+  }
+}
+
+/**
+ * Public alias for getAvailableRoles_().
+ * google.script.run cannot call underscore-suffixed functions from HTML
+ * dialogs in all Apps Script runtime versions; this wrapper ensures the
+ * function is reachable as getAvailableRoles() from every HTML client.
+ *
+ * @returns {{role: string, rate: number}[]} Array of {role, rate} objects from ROLE_RATE_CARD_DATA.
+ */
+function getAvailableRoles() {
+  return getAvailableRoles_();
+}
+
+/**
+ * Private helper: returns the AgreedHourlyRate (£/hr) for a given ContributorKey.
+ * Reads column 8 (index 7) of the Contributors sheet.
+ * Returns 0 if the sheet is missing, the contributor is not found, or the cell is blank.
+ *
+ * @param  {string} contributorKey
+ * @returns {number}
+ */
+function getContributorRate_(contributorKey) {
+  try {
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Contributors');
+    if (!sheet) return 0;
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return 0;
+
+    // Read as many columns as the schema defines (8 after migration)
+    const numCols = Math.max(CONFIG.CONTRIBUTORS_SCHEMA.length, 8);
+    const data    = sheet.getRange(2, 1, lastRow - 1, numCols).getValues();
+    const keyNorm = String(contributorKey).trim().toLowerCase();
+
+    for (const row of data) {
+      if (String(row[0] || '').trim().toLowerCase() === keyNorm) {
+        return Number(row[7]) || 0;   // Col 8 = index 7 = AgreedHourlyRate
+      }
+    }
+    return 0;
+  } catch (err) {
+    console.error('getContributorRate_ error:', err);
+    return 0;
+  }
+}
+
+/**
+ * Backend handler for the Rename Contributor form submission.
+ * Called from RenameContributorForm.html via google.script.run.
+ *
+ * Finds the contributor row by ContributorKey, updates only the Name column
+ * (column 2, index 1 in CONTRIBUTORS_SCHEMA). ContributorKey is never modified.
+ *
+ * @param {Object} formData
+ * @param {string} formData.contributorKey - The existing ContributorKey (immutable)
+ * @param {string} formData.newName        - The desired new display name
+ * @returns {Object} {success, contributorKey, oldName, newName}
+ */
+function processRenameContributor(formData) {
+  try {
+    // Validate input object
+    if (!formData || typeof formData !== 'object') {
+      throw new Error('Invalid form data received');
+    }
+
+    const contributorKey = String(formData.contributorKey || '').trim();
+    const newName        = String(formData.newName        || '').trim();
+
+    if (!contributorKey) {
+      throw new Error('ContributorKey is required');
+    }
+
+    if (!newName) {
+      throw new Error('New name is required');
+    }
+
+    // Locate the Contributors sheet
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Contributors');
+    if (!sheet) {
+      throw new Error('Contributors sheet not found. Please run "Initialize System" first.');
+    }
+
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) {
+      throw new Error('No contributors found. Please add contributors before renaming.');
+    }
+
+    // Scan data rows for the matching ContributorKey
+    // Schema: [ContributorKey(0), Name(1), Email(2), Role(3), JoinDate(4), Status(5), Notes(6)]
+    const data = sheet.getRange(2, 1, lastRow - 1, CONFIG.CONTRIBUTORS_SCHEMA.length).getValues();
+    let oldName  = null;
+    let sheetRow = -1; // 1-indexed sheet row number
+
+    for (let i = 0; i < data.length; i++) {
+      if (String(data[i][0] || '').trim() === contributorKey) {
+        oldName  = String(data[i][1] || '');
+        sheetRow = i + 2; // +1 for 1-index, +1 for header row
         break;
       }
     }
-    
-    if (found) {
-      ui.alert(
-        'Contributor Renamed',
-        'Contributor renamed successfully!\n\nContributorKey: ' + contributorKey + '\nNew Name: ' + newName,
-        ui.ButtonSet.OK
-      );
-    } else {
-      ui.alert('Error', 'Contributor not found: ' + contributorKey, ui.ButtonSet.OK);
+
+    if (sheetRow === -1) {
+      throw new Error('Contributor not found: "' + contributorKey + '". ' +
+        'The contributor may have been removed. Please refresh and try again.');
     }
+
+    // Update Name column only (column 2 = index 1 in schema, 1-indexed = col 2)
+    sheet.getRange(sheetRow, 2).setValue(newName);
+
+    console.log('Contributor renamed: ' + contributorKey + ' | ' + oldName + ' → ' + newName);
+
+    return {
+      success:        true,
+      contributorKey: contributorKey,
+      oldName:        oldName,
+      newName:        newName
+    };
+
+  } catch (err) {
+    console.error('processRenameContributor error:', err);
+    throw new Error('Failed to rename contributor: ' + err.message);
+  }
+}
+
+/**
+ * UI wrapper to rename a contributor (parameterless, safe for menu).
+ * Uses modern HTML dialog instead of sequential ui.prompt() calls.
+ */
+function renameContributorUI_() {
+  try {
+    const html = HtmlService.createHtmlOutputFromFile('RenameContributorForm')
+      .setWidth(450)
+      .setHeight(500)
+      .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+
+    SpreadsheetApp.getUi().showModalDialog(html, 'Rename Contributor');
   } catch (err) {
     console.error('renameContributorUI_ error:', err);
     SpreadsheetApp.getUi().alert(
-      'Error Renaming Contributor',
-      'Failed to rename contributor.\n\nError: ' + err.message,
+      'Error',
+      'Failed to open Rename Contributor dialog.\n\nError: ' + err.message +
+        '\n\nPlease ensure the RenameContributorForm.html file is deployed.',
       SpreadsheetApp.getUi().ButtonSet.OK
     );
   }
@@ -3341,7 +3637,11 @@ function generateInvestorExportUI_() {
       const contributorKey = masterData[i][1]; // ContributorKey is column B (index 1)
       const name = masterData[i][2]; // ContributorName is column C (index 2)
       const totalSlices = parseFloat(masterData[i][8]) || 0; // TotalSlices is column I (index 8)
-      const cashInvested = 0; // TODO: Calculate from contribution type
+      // ContributionType = index 3, BaseValue = index 5, Quantity = index 6
+      const contribType  = String(masterData[i][3] || '').toUpperCase();
+      const cashInvested = (contribType === 'CASH')
+        ? (parseFloat(masterData[i][5]) || 0) * (parseFloat(masterData[i][6]) || 0)
+        : 0;
       
       if (!aggregated[contributorKey]) {
         aggregated[contributorKey] = {
@@ -3516,59 +3816,63 @@ function verifyAuditChainUI_() {
 /**
  * UI wrapper to approve selected row in Pending sheet (parameterless, safe for menu)
  */
+
 function approveSelectedPendingRowUI_() {
+  const ui = SpreadsheetApp.getUi();
   try {
-    const ui = SpreadsheetApp.getUi();
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const activeSheet = ss.getActiveSheet();
-    
-    // Validate sheet name
-    if (activeSheet.getName() !== 'Pending') {
+    const sheet = ss.getActiveSheet();
+
+    if (!sheet || sheet.getName() !== 'Pending') {
+      ui.alert('Invalid Sheet', 'Please open the Pending sheet and select a data row (row 2 or higher).', ui.ButtonSet.OK);
+      return;
+    }
+
+    const range = sheet.getActiveRange();
+    if (!range) {
+      ui.alert('No Selection', 'No cell/row selected. Please select a cell in the Pending row you want to approve.', ui.ButtonSet.OK);
+      return;
+    }
+
+    const rowNum = range.getRow();
+    if (!Number.isInteger(rowNum) || rowNum < 2) {
+      ui.alert('Invalid Row', 'Please select a Pending data row (row 2 or higher).', ui.ButtonSet.OK);
+      return;
+    }
+
+    const result = approveContribution(rowNum);
+
+    // Quorum path (very important — do not assume fields exist)
+    if (result && result.success === false && result.state === 'PENDING_QUORUM') {
       ui.alert(
-        'Invalid Sheet',
-        'Please select a row in the Pending sheet.\n\nCurrent sheet: ' + activeSheet.getName(),
+        'Approval Recorded (Quorum Pending)',
+        'Approval recorded.\n\n' +
+          'Approvers: ' + result.approversCount + '/' + result.requiredApprovers + '\n' +
+          (result.message ? ('\n' + result.message) : ''),
         ui.ButtonSet.OK
       );
       return;
     }
-    
-    // Get active selection
-    const selection = activeSheet.getActiveRange();
-    if (!selection) {
-      ui.alert('Error', 'No row selected. Please select a row in the Pending sheet.', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Extract row number
-    const rowNum = selection.getRow();
-    
-    // Validate row number
-    if (!Number.isInteger(rowNum) || rowNum < 2) {
-      ui.alert('Error', 'Invalid row selected. Please select a data row (row 2 or higher).', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Call core approval function
-    const result = approveContribution(rowNum);
-    
-    // Display success message
+
+    // Success path
     ui.alert(
       'Contribution Approved',
-      'Contribution approved successfully!\n\n' +
-      'Contributor: ' + result.contributorKey + '\n' +
-      'Slices Awarded: ' + result.slicesAwarded.toFixed(2) + '\n' +
-      'Equity: ' + result.equityPercent.toFixed(4) + '%\n' +
-      'Decision Signature: ' + result.decisionSignature.substring(0, 16) + '...\n' +
-      'Master Signature: ' + result.masterRowSignature.substring(0, 16) + '...',
+      'Contribution approved successfully.\n\n' +
+        'Row: ' + rowNum + '\n' +
+        (result && result.contributorKey ? ('Contributor: ' + result.contributorKey + '\n') : '') +
+        (result && typeof result.slicesAwarded === 'number' ? ('Slices: ' + result.slicesAwarded.toFixed(2) + '\n') : '') +
+        (result && typeof result.equityPercent === 'number' ? ('Equity: ' + result.equityPercent.toFixed(4) + '%\n') : '') +
+        (result && result.decisionSignature ? ('Decision Sig: ' + String(result.decisionSignature).slice(0, 16) + '...\n') : '') +
+        (result && result.masterRowSignature ? ('Master Sig: ' + String(result.masterRowSignature).slice(0, 16) + '...') : ''),
       ui.ButtonSet.OK
     );
+
   } catch (err) {
     console.error('approveSelectedPendingRowUI_ error:', err);
-    SpreadsheetApp.getUi().alert(
+    ui.alert(
       'Error Approving Contribution',
-      'Failed to approve contribution.\n\nError: ' + err.message + '\n\n' +
-      'Please ensure the selected row has valid data and required fields are populated.',
-      SpreadsheetApp.getUi().ButtonSet.OK
+      'Failed to approve contribution.\n\nError: ' + (err && err.message ? err.message : String(err)),
+      ui.ButtonSet.OK
     );
   }
 }
@@ -3655,96 +3959,121 @@ function rejectSelectedPendingRowUI_() {
 /**
  * UI wrapper to record a new contribution (parameterless, safe for menu)
  */
+/**
+ * Menu item: Record Contribution.
+ * Opens RecordContributionForm.html — replaces the legacy five-step ui.prompt() flow.
+ * The ContributorKey is never exposed to the user; it is carried as the hidden value
+ * of the contributor dropdown and passed directly to processRecordContributionForm().
+ * Called from menu: "Slicing Pie > Record Contribution"
+ */
 function recordContributionUI_() {
   try {
-    const ui = SpreadsheetApp.getUi();
-    
-    // Prompt for ContributorKey
-    const keyResponse = ui.prompt('Record Contribution', 'Enter ContributorKey:', ui.ButtonSet.OK_CANCEL);
-    if (keyResponse.getSelectedButton() !== ui.Button.OK) return;
-    const contributorKey = keyResponse.getResponseText().trim();
-    if (!contributorKey) {
-      ui.alert('Error', 'ContributorKey cannot be empty.', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Prompt for ContributionType
-    const typeResponse = ui.prompt('Record Contribution', 'Enter ContributionType (e.g., Full-Time Work, Cash Investment):', ui.ButtonSet.OK_CANCEL);
-    if (typeResponse.getSelectedButton() !== ui.Button.OK) return;
-    const contributionType = typeResponse.getResponseText().trim();
-    if (!contributionType) {
-      ui.alert('Error', 'ContributionType cannot be empty.', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Prompt for ValueUSD
-    const valueResponse = ui.prompt('Record Contribution', 'Enter ValueUSD (numeric):', ui.ButtonSet.OK_CANCEL);
-    if (valueResponse.getSelectedButton() !== ui.Button.OK) return;
-    const valueUSD = parseFloat(valueResponse.getResponseText().trim());
-    if (isNaN(valueUSD) || valueUSD < 0) {
-      ui.alert('Error', 'ValueUSD must be a valid positive number.', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Prompt for SlicesDelta
-    const slicesResponse = ui.prompt('Record Contribution', 'Enter SlicesDelta (numeric):', ui.ButtonSet.OK_CANCEL);
-    if (slicesResponse.getSelectedButton() !== ui.Button.OK) return;
-    const slicesDelta = parseFloat(slicesResponse.getResponseText().trim());
-    if (isNaN(slicesDelta) || slicesDelta < 0) {
-      ui.alert('Error', 'SlicesDelta must be a valid positive number.', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Prompt for Notes (optional)
-    const notesResponse = ui.prompt('Record Contribution', 'Enter Notes (optional):', ui.ButtonSet.OK_CANCEL);
-    const notes = notesResponse.getSelectedButton() === ui.Button.OK ? notesResponse.getResponseText().trim() : '';
-    
-    // Get Pending sheet
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const pendingSheet = ss.getSheetByName('Pending');
-    if (!pendingSheet) {
-      ui.alert('Error', 'Pending sheet not found. Please run "Initialize System" first.', ui.ButtonSet.OK);
-      return;
-    }
-    
-    // Append new pending row
-    pendingSheet.appendRow([
-      new Date(),                  // Timestamp
-      contributorKey,              // ContributorKey
-      '',                          // ContributorName (empty for now)
-      contributionType,            // ContributionType
-      '',                          // Multiplier (empty)
-      valueUSD,                    // BaseValue
-      '',                          // Quantity (empty)
-      slicesDelta,                 // SlicesAwarded
-      '',                          // EvidenceURL (empty)
-      notes,                       // Notes
-      'PENDING',                   // Status
-      '',                          // Approvers (empty)
-      '',                          // DecisionSignature (empty)
-      '',                          // DecisionTimestamp (empty)
-      ''                           // RequestId (empty)
-    ]);
-    
-    const newRow = pendingSheet.getLastRow();
-    
-    ui.alert(
-      'Contribution Recorded',
-      `Contribution recorded successfully in Pending sheet!\n\n` +
-      `Row: ${newRow}\n` +
-      `ContributorKey: ${contributorKey}\n` +
-      `Type: ${contributionType}\n` +
-      `Value: $${valueUSD.toFixed(2)}\n` +
-      `Slices: ${slicesDelta.toFixed(2)}`,
-      ui.ButtonSet.OK
-    );
+    const html = HtmlService.createHtmlOutputFromFile('RecordContributionForm')
+      .setWidth(480)
+      .setHeight(560)
+      .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+    SpreadsheetApp.getUi().showModalDialog(html, 'Record Contribution');
   } catch (err) {
     console.error('recordContributionUI_ error:', err);
     SpreadsheetApp.getUi().alert(
-      'Error Recording Contribution',
-      `Failed to record contribution.\n\nError: ${err.message}`,
+      'Error',
+      'Failed to open Record Contribution dialog.\n\nError: ' + err.message +
+        '\n\nPlease ensure RecordContributionForm.html is deployed.',
       SpreadsheetApp.getUi().ButtonSet.OK
     );
+  }
+}
+
+/**
+ * Backend handler for the Record Contribution HTML form.
+ * Called from RecordContributionForm.html via google.script.run.
+ *
+ * Validates the submitted form data and delegates to the core
+ * processContribution_() function, which handles multiplier lookup,
+ * UUID generation, schema enforcement, Pending sheet append, and audit log.
+ *
+ * @param {Object} formData
+ * @param {string} formData.contributorKey  - ContributorKey from the dropdown value binding
+ * @param {string} formData.contributorName - Contributor display name (from dropdown text)
+ * @param {string} formData.contributionType - One of: TIME, CASH, SUPPLIES, EQUIPMENT,
+ *                                             FACILITIES, IP, RELATIONSHIPS, SALES, EXPENSES
+ * @param {number|string} formData.baseValue - Monetary base value in GBP (> 0)
+ * @param {number|string} formData.quantity  - Unit quantity / hours (> 0)
+ * @param {string} [formData.evidenceURL]    - Optional URL linking to supporting evidence
+ * @param {string} [formData.notes]          - Optional free-text notes
+ *
+ * @returns {{success: boolean, requestId: string, slices: number,
+ *            contributorKey: string, contributorName: string}}
+ */
+function processRecordContributionForm(formData) {
+  try {
+    if (!formData || typeof formData !== 'object') {
+      throw new Error('Invalid form data received.');
+    }
+
+    const contributorKey   = String(formData.contributorKey   || '').trim();
+    const contributorName  = String(formData.contributorName  || '').trim();
+    const contributionType = String(formData.contributionType || '').trim().toUpperCase();
+    const quantity         = Number(formData.quantity);
+    const evidenceURL      = String(formData.evidenceURL || '').trim();
+    const notes            = String(formData.notes       || '').trim();
+
+    // ── Pre-flight validation (mirrors client-side checks) ───────────────────
+    if (!contributorKey) {
+      throw new Error('A contributor must be selected.');
+    }
+    if (!contributionType) {
+      throw new Error('A contribution type must be selected.');
+    }
+    if (isNaN(quantity) || quantity <= 0) {
+      throw new Error('Quantity must be a positive number.');
+    }
+
+    // ── Bespoke FMV Rate intercept for TIME contributions ────────────────────
+    // When the type is TIME, baseValue is auto-derived from the contributor's
+    // AgreedHourlyRate stored in the Contributors sheet.  The form does NOT
+    // submit a baseValue for TIME so we must NOT read formData.baseValue here.
+    let baseValue;
+    if (contributionType === 'TIME') {
+      baseValue = getContributorRate_(contributorKey);
+      if (!baseValue || baseValue <= 0) {
+        throw new Error(
+          'No Agreed Hourly Rate found for this contributor. ' +
+          'Please edit the contributor profile and set an AgreedHourlyRate before recording TIME contributions.'
+        );
+      }
+    } else {
+      baseValue = Number(formData.baseValue);
+      if (isNaN(baseValue) || baseValue <= 0) {
+        throw new Error('Base value must be a positive number.');
+      }
+    }
+    if (evidenceURL && !isValidURL_(evidenceURL)) {
+      throw new Error('Evidence URL is not a valid URL.');
+    }
+
+    // ── Delegate to core engine ──────────────────────────────────────────────
+    const result = processContribution_(
+      contributorKey,
+      contributionType,
+      baseValue,
+      quantity,
+      notes,
+      evidenceURL,
+      contributorName
+    );
+
+    console.log('processRecordContributionForm success:', JSON.stringify({
+      requestId:       result.requestId,
+      contributorKey:  result.contributorKey,
+      slices:          result.slices
+    }));
+
+    return result;
+
+  } catch (err) {
+    console.error('processRecordContributionForm error:', err);
+    throw new Error(err.message || 'Failed to record contribution.');
   }
 }
 
@@ -3778,6 +4107,145 @@ function rebuildMasterTotalsUI_() {
   } catch (err) {
     console.error('rebuildMasterTotalsUI_ error:', err);
   }
+}
+
+/**
+ * Admin utility: migrate the Contributors sheet from 7 columns to 8 by adding
+ * the AgreedHourlyRate header to column H and backfilling 0 for existing rows.
+ * Safe to run multiple times — exits early if the header already exists.
+ */
+function migrateContributorsTo8Cols_() {
+  try {
+    const ui    = SpreadsheetApp.getUi();
+    const ss    = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('Contributors');
+
+    if (!sheet) {
+      ui.alert('Migration Error', 'Contributors sheet not found. Run "Initialize System" first.', ui.ButtonSet.OK);
+      return;
+    }
+
+    // Check whether column H header already exists
+    const numCols   = sheet.getLastColumn();
+    const headerRow = numCols > 0 ? sheet.getRange(1, 1, 1, numCols).getValues()[0] : [];
+    const colHHeader = headerRow[7] ? String(headerRow[7]).trim() : '';
+
+    if (colHHeader === 'AgreedHourlyRate') {
+      ui.alert('Migration', 'AgreedHourlyRate column already exists — no changes needed.', ui.ButtonSet.OK);
+      return;
+    }
+
+    // Write header in column H (col index 8, 1-based)
+    sheet.getRange(1, 8).setValue('AgreedHourlyRate');
+
+    // Backfill 0 for every existing data row
+    const lastRow = sheet.getLastRow();
+    if (lastRow >= 2) {
+      const zeros = Array.from({ length: lastRow - 1 }, () => [0]);
+      sheet.getRange(2, 8, lastRow - 1, 1).setValues(zeros);
+    }
+
+    SpreadsheetApp.flush();
+    const affected = Math.max(0, lastRow - 1);
+    ui.alert(
+      'Migration Complete',
+      `AgreedHourlyRate column added to Contributors sheet.\n${affected} existing row(s) backfilled with 0.\n\nRemember to set each contributor's hourly rate before recording TIME contributions.`,
+      ui.ButtonSet.OK
+    );
+    console.log('migrateContributorsTo8Cols_: migrated ' + affected + ' rows.');
+
+  } catch (err) {
+    console.error('migrateContributorsTo8Cols_ error:', err);
+    try {
+      SpreadsheetApp.getUi().alert('Migration Error', err.message, SpreadsheetApp.getUi().ButtonSet.OK);
+    } catch (e) { /* silent */ }
+  }
+}
+
+/**
+ * Menu item: Review Contributions (Bulk).
+ * Opens ReviewDashboard.html — a bulk approve/reject interface.
+ * Called from menu: "Slicing Pie > Workflow > Review Contributions"
+ */
+function reviewContributionsUI_() {
+  try {
+    const html = HtmlService.createHtmlOutputFromFile('ReviewDashboard')
+      .setWidth(850)
+      .setHeight(600)
+      .setSandboxMode(HtmlService.SandboxMode.IFRAME);
+    SpreadsheetApp.getUi().showModalDialog(html, 'Review Contributions');
+  } catch (err) {
+    console.error('reviewContributionsUI_ error:', err);
+    SpreadsheetApp.getUi().alert(
+      'Error',
+      'Failed to open Review Contributions dialog.\n\nError: ' + err.message +
+        '\n\nPlease ensure ReviewDashboard.html is deployed.',
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+  }
+}
+
+/**
+ * Backend handler for bulk contribution review.
+ * Called from ReviewDashboard.html via google.script.run.
+ *
+ * @param {Array<{rowNum: number, action: string, reason: string}>} reviewsArray
+ *   Each entry has:
+ *     rowNum  - Pending sheet row number (integer ≥2)
+ *     action  - 'APPROVE' | 'REJECT' | 'SKIP'
+ *     reason  - Rejection reason (required when action === 'REJECT', min 3 chars)
+ * @returns {Object} {processed: number, approved: number, rejected: number, skipped: number, errors: Array<string>}
+ */
+function processBulkReviews(reviewsArray) {
+  if (!Array.isArray(reviewsArray) || reviewsArray.length === 0) {
+    throw new Error('processBulkReviews: reviewsArray must be a non-empty array.');
+  }
+
+  // Sort descending by rowNum so deletions / row shifts don't invalidate later indices
+  const sorted = reviewsArray.slice().sort(function(a, b) {
+    return Number(b.rowNum) - Number(a.rowNum);
+  });
+
+  let approved = 0;
+  let rejected = 0;
+  let skipped  = 0;
+  const errors = [];
+
+  for (const item of sorted) {
+    const rowNum = Number(item.rowNum);
+    const action = String(item.action || 'SKIP').toUpperCase();
+    const reason = String(item.reason || '').trim();
+
+    if (action === 'SKIP') {
+      skipped++;
+      continue;
+    }
+
+    try {
+      if (action === 'APPROVE') {
+        approveContribution(rowNum);
+        approved++;
+      } else if (action === 'REJECT') {
+        if (reason.length < 3) {
+          throw new Error('Rejection reason must be at least 3 characters.');
+        }
+        rejectContribution(rowNum, reason);
+        rejected++;
+      } else {
+        skipped++;
+      }
+    } catch (err) {
+      errors.push('Row ' + rowNum + ': ' + err.message);
+    }
+  }
+
+  return {
+    processed: approved + rejected + skipped,
+    approved:  approved,
+    rejected:  rejected,
+    skipped:   skipped,
+    errors:    errors
+  };
 }
 
 /**

@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Record Contribution</title>
+  <style>
+    /* ── Reset ──────────────────────────────────────────────────────────────── */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    /* ── Base ───────────────────────────────────────────────────────────────── */
+    body {
+      font-family: 'Google Sans', 'Roboto', Arial, sans-serif;
+      font-size: 14px;
+      color: #202124;
+      background: #ffffff;
+      padding: 28px 28px 20px;
+      line-height: 1.5;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────────── */
+    .dialog-header {
+      margin-bottom: 22px;
+    }
+
+    .dialog-header h2 {
+      font-size: 20px;
+      font-weight: 500;
+      color: #202124;
+      margin-bottom: 4px;
+    }
+
+    .dialog-header p {
+      font-size: 13px;
+      color: #5f6368;
+    }
+
+    /* ── Form groups ─────────────────────────────────────────────────────────── */
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #3c4043;
+      margin-bottom: 6px;
+      letter-spacing: 0.01em;
+    }
+
+    .required-star {
+      color: #d93025;
+      margin-left: 2px;
+    }
+
+    /* ── Inputs, selects, textarea ──────────────────────────────────────────── */
+    input[type="text"],
+    input[type="number"],
+    input[type="url"],
+    select,
+    textarea {
+      display: block;
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      color: #202124;
+      background-color: #ffffff;
+      border: 1px solid #dadce0;
+      border-radius: 4px;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+      appearance: none;
+      -webkit-appearance: none;
+    }
+
+    input[type="text"]:focus,
+    input[type="number"]:focus,
+    input[type="url"]:focus,
+    select:focus,
+    textarea:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.12);
+    }
+
+    input::placeholder,
+    textarea::placeholder {
+      color: #9aa0a6;
+    }
+
+    input:disabled,
+    select:disabled,
+    textarea:disabled {
+      background-color: #f8f9fa;
+      color: #80868b;
+      cursor: not-allowed;
+      border-color: #e8eaed;
+    }
+
+    /* Custom dropdown arrow */
+    select {
+      cursor: pointer;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%235f6368' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 34px;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 72px;
+      max-height: 140px;
+    }
+
+    /* ── Two-column numeric row ─────────────────────────────────────────────── */
+    .two-col {
+      display: flex;
+      gap: 14px;
+    }
+
+    .two-col .form-group {
+      flex: 1;
+    }
+
+    /* ── Base-value auto-calc info banner (shown for TIME) ──────────────────── */
+    .auto-rate-info {
+      display: none;              /* toggled by JS */
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 12px;
+      background: #e8f0fe;
+      border: 1px solid #c5d9f7;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #1558d6;
+      margin-bottom: 16px;
+    }
+
+    .auto-rate-info.visible { display: flex; }
+
+    .auto-rate-info svg {
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* ── Slices preview badge ───────────────────────────────────────────────── */
+    .slices-preview {
+      display: none;
+      margin-top: 8px;
+      padding: 8px 12px;
+      background: #e8f0fe;
+      border: 1px solid #c5d9f7;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #1558d6;
+    }
+
+    .slices-preview.visible { display: block; }
+
+    .slices-preview strong {
+      font-weight: 600;
+      font-size: 15px;
+    }
+
+    /* ── Inline validation errors ───────────────────────────────────────────── */
+    .field-error {
+      display: none;
+      margin-top: 5px;
+      font-size: 12px;
+      color: #d93025;
+    }
+
+    .field-error.visible { display: block; }
+
+    input.invalid,
+    select.invalid,
+    textarea.invalid {
+      border-color: #d93025;
+    }
+
+    input.invalid:focus,
+    select.invalid:focus,
+    textarea.invalid:focus {
+      box-shadow: 0 0 0 3px rgba(217, 48, 37, 0.12);
+    }
+
+    /* ── Loading spinner (page-level, while fetching contributors) ──────────── */
+    .page-loading {
+      text-align: center;
+      padding: 60px 24px;
+      color: #5f6368;
+      font-size: 14px;
+    }
+
+    .page-loading.hidden { display: none; }
+
+    .page-load-spinner {
+      display: inline-block;
+      width: 26px;
+      height: 26px;
+      border: 3px solid #e8eaed;
+      border-top-color: #1a73e8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-bottom: 14px;
+    }
+
+    /* ── Error banner ───────────────────────────────────────────────────────── */
+    .error-banner {
+      display: none;
+      background: #fce8e6;
+      border: 1px solid #f5c6c2;
+      border-radius: 6px;
+      padding: 12px 16px;
+      color: #c5221f;
+      font-size: 13px;
+      margin-bottom: 18px;
+    }
+
+    .error-banner.visible { display: block; }
+
+    /* ── Divider ────────────────────────────────────────────────────────────── */
+    .divider {
+      border: none;
+      border-top: 1px solid #e8eaed;
+      margin: 20px 0 16px;
+    }
+
+    /* ── Button row ─────────────────────────────────────────────────────────── */
+    .button-row {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      gap: 10px;
+    }
+
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 9px 22px;
+      font-size: 14px;
+      font-weight: 500;
+      font-family: inherit;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background-color 0.15s ease, box-shadow 0.15s ease;
+      min-width: 88px;
+    }
+
+    .btn-cancel {
+      background: transparent;
+      color: #1a73e8;
+      border: 1px solid transparent;
+    }
+
+    .btn-cancel:hover:not(:disabled) { background: rgba(26, 115, 232, 0.06); }
+    .btn-cancel:active:not(:disabled) { background: rgba(26, 115, 232, 0.12); }
+    .btn-cancel:disabled { color: #80868b; cursor: not-allowed; }
+
+    .btn-submit {
+      background-color: #1a73e8;
+      color: #ffffff;
+    }
+
+    .btn-submit:hover:not(:disabled) {
+      background-color: #1765cc;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+    }
+
+    .btn-submit:active:not(:disabled) {
+      background-color: #1557b0;
+      box-shadow: none;
+    }
+
+    .btn-submit:disabled {
+      background-color: #dadce0;
+      color: #80868b;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    /* Spinner inside submit button */
+    .btn-spinner {
+      display: none;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255, 255, 255, 0.45);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+      flex-shrink: 0;
+    }
+
+    .btn-spinner.visible { display: block; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+
+<body>
+
+  <!-- Page-level loading state (while getContributorsList fetches) -->
+  <div class="page-loading" id="pageLoading">
+    <div class="page-load-spinner"></div>
+    <div>Loading contributors…</div>
+  </div>
+
+  <!-- Main form (hidden until contributors are loaded) -->
+  <div id="mainContent" style="display:none;">
+
+    <div class="dialog-header">
+      <h2>Record Contribution</h2>
+      <p>Submit a new contribution for approval.</p>
+    </div>
+
+    <!-- Backend / submission error banner -->
+    <div class="error-banner" id="errorBanner" role="alert"></div>
+
+    <form id="recordForm" novalidate>
+
+      <!-- Contributor (dropdown, ContributorKey is the option value) -->
+      <div class="form-group">
+        <label for="contributorSelect">
+          Contributor<span class="required-star" aria-hidden="true">*</span>
+        </label>
+        <select id="contributorSelect" name="contributorSelect">
+          <option value="">— Select a contributor —</option>
+        </select>
+        <span class="field-error" id="contributorError" role="alert">
+          Please select a contributor.
+        </span>
+      </div>
+
+      <!-- Contribution Type -->
+      <div class="form-group">
+        <label for="contributionType">
+          Contribution Type<span class="required-star" aria-hidden="true">*</span>
+        </label>
+        <select id="contributionType" name="contributionType">
+          <option value="">— Select a type —</option>
+          <option value="TIME">TIME — Time &amp; Labour (×2)</option>
+          <option value="CASH">CASH — Cash (×4)</option>
+          <option value="SUPPLIES">SUPPLIES — Supplies (×4)</option>
+          <option value="EQUIPMENT">EQUIPMENT — Equipment (×4)</option>
+          <option value="FACILITIES">FACILITIES — Facilities (×4)</option>
+          <option value="IP">IP — Intellectual Property (×4)</option>
+          <option value="RELATIONSHIPS">RELATIONSHIPS — Relationships (×2)</option>
+          <option value="SALES">SALES — Sales (×2)</option>
+          <option value="EXPENSES">EXPENSES — Expenses (×1)</option>
+        </select>
+        <span class="field-error" id="typeError" role="alert">
+          Please select a contribution type.
+        </span>
+      </div>
+
+      <!-- Auto-rate info banner: shown only when TIME is selected -->
+      <div class="auto-rate-info" id="autoRateInfo" role="note">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="#1558d6" aria-hidden="true">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+        </svg>
+        <span>Base value is auto-calculated using the contributor's agreed hourly rate. Enter the number of hours below.</span>
+      </div>
+
+      <!-- Base Value (GBP) + Quantity — side by side.
+           The base-value column is hidden when TIME is selected. -->
+      <div class="two-col" id="numericRow">
+
+        <!-- Base Value — hidden for TIME, shown for all other types -->
+        <div class="form-group" id="baseValueGroup">
+          <label for="baseValue">
+            Base Value (£)<span class="required-star" aria-hidden="true">*</span>
+          </label>
+          <input
+            type="number"
+            id="baseValue"
+            name="baseValue"
+            placeholder="e.g. 5000"
+            min="0.01"
+            step="0.01"
+          >
+          <span class="field-error" id="baseValueError" role="alert">
+            Enter a positive value in GBP.
+          </span>
+        </div>
+
+        <!-- Quantity — always visible -->
+        <div class="form-group" id="quantityGroup">
+          <label for="quantity">
+            Quantity<span class="required-star" aria-hidden="true">*</span>
+          </label>
+          <input
+            type="number"
+            id="quantity"
+            name="quantity"
+            placeholder="e.g. 1"
+            min="0.01"
+            step="0.01"
+          >
+          <span class="field-error" id="quantityError" role="alert">
+            Enter a positive quantity.
+          </span>
+        </div>
+
+      </div><!-- /.two-col -->
+
+      <!-- Live slices preview -->
+      <div class="slices-preview" id="slicesPreview">
+        Estimated slices: <strong id="slicesValue">—</strong>
+        <span style="color:#5f6368; font-size:12px; margin-left:6px;" id="slicesNote">(BaseValue × Quantity × Multiplier)</span>
+      </div>
+
+      <!-- Evidence URL (optional) -->
+      <div class="form-group" style="margin-top:16px;">
+        <label for="evidenceURL">Evidence URL <span style="color:#5f6368;font-weight:400;">(optional)</span></label>
+        <input
+          type="url"
+          id="evidenceURL"
+          name="evidenceURL"
+          placeholder="https://drive.google.com/…"
+          maxlength="2048"
+        >
+        <span class="field-error" id="evidenceError" role="alert">
+          Please enter a valid URL (or leave blank).
+        </span>
+      </div>
+
+      <!-- Notes (optional) -->
+      <div class="form-group">
+        <label for="notes">Notes <span style="color:#5f6368;font-weight:400;">(optional)</span></label>
+        <textarea
+          id="notes"
+          name="notes"
+          placeholder="Additional context for approvers…"
+          maxlength="1000"
+        ></textarea>
+      </div>
+
+      <hr class="divider">
+
+      <div class="button-row">
+        <button type="button" class="btn-cancel" id="cancelBtn">Cancel</button>
+        <button type="submit" class="btn-submit" id="submitBtn">
+          <span class="btn-spinner" id="btnSpinner" aria-hidden="true"></span>
+          <span id="submitLabel">Submit</span>
+        </button>
+      </div>
+
+    </form>
+
+  </div><!-- /mainContent -->
+
+  <script>
+    /* ─── Multiplier map (mirrors CONFIG.MULTIPLIERS in Code.gs) ───────────── */
+    var MULTIPLIERS = {
+      TIME: 2, CASH: 4, SUPPLIES: 4, EQUIPMENT: 4,
+      FACILITIES: 4, IP: 4, RELATIONSHIPS: 2, SALES: 2, EXPENSES: 1
+    };
+
+    /* ─── Track whether current type is TIME ───────────────────────────────── */
+    var isTimeContribution = false;
+
+    /* ─── Helpers ───────────────────────────────────────────────────────────── */
+    function showError(msg) {
+      var b = document.getElementById('errorBanner');
+      b.textContent = msg;
+      b.classList.add('visible');
+    }
+
+    function clearError() {
+      document.getElementById('errorBanner').classList.remove('visible');
+    }
+
+    function setFieldError(elId, errId, show) {
+      var el  = document.getElementById(elId);
+      var err = document.getElementById(errId);
+      if (show) {
+        el.classList.add('invalid');
+        err.classList.add('visible');
+      } else {
+        el.classList.remove('invalid');
+        err.classList.remove('visible');
+      }
+    }
+
+    function setLoading(loading) {
+      document.getElementById('submitBtn').disabled = loading;
+      document.getElementById('cancelBtn').disabled = loading;
+
+      /* Conditionally include baseValue only when it is visible */
+      var fields = ['contributorSelect', 'contributionType', 'quantity', 'evidenceURL', 'notes'];
+      if (!isTimeContribution) fields.push('baseValue');
+
+      fields.forEach(function (id) {
+        document.getElementById(id).disabled = loading;
+      });
+
+      var spinner = document.getElementById('btnSpinner');
+      var label   = document.getElementById('submitLabel');
+      if (loading) {
+        spinner.classList.add('visible');
+        label.textContent = 'Submitting…';
+      } else {
+        spinner.classList.remove('visible');
+        label.textContent = 'Submit';
+      }
+    }
+
+    /* ─── Show / hide base-value field based on contribution type ───────────── */
+    function applyTypeMode(type) {
+      var isTime        = (type === 'TIME');
+      isTimeContribution = isTime;
+
+      var baseGroup  = document.getElementById('baseValueGroup');
+      var autoInfo   = document.getElementById('autoRateInfo');
+      var baseInput  = document.getElementById('baseValue');
+      var qtyGroup   = document.getElementById('quantityGroup');
+      var qtyLabel   = qtyGroup.querySelector('label');
+
+      if (isTime) {
+        /* Hide base-value input; show info banner */
+        baseGroup.style.display  = 'none';
+        autoInfo.classList.add('visible');
+        baseInput.value          = '';          /* clear stale value */
+        baseInput.disabled       = true;
+
+        /* Widen quantity to full width since base-value column is hidden */
+        qtyGroup.style.flex = '1 1 100%';
+        qtyLabel.firstChild.textContent = 'Hours';
+
+        /* Update quantity placeholder */
+        document.getElementById('quantity').placeholder = 'e.g. 40';
+      } else {
+        /* Restore base-value input */
+        baseGroup.style.display  = '';
+        autoInfo.classList.remove('visible');
+        baseInput.disabled       = false;
+
+        qtyGroup.style.flex = '1';
+        qtyLabel.firstChild.textContent = 'Quantity';
+        document.getElementById('quantity').placeholder = 'e.g. 1';
+      }
+
+      /* Clear previous validation state on base-value field whenever type changes */
+      setFieldError('baseValue', 'baseValueError', false);
+
+      /* Refresh slices preview for the new mode */
+      updateSlicesPreview();
+    }
+
+    /* ─── Live slices preview ───────────────────────────────────────────────── */
+    function updateSlicesPreview() {
+      var type  = document.getElementById('contributionType').value;
+      var qty   = parseFloat(document.getElementById('quantity').value);
+      var prev  = document.getElementById('slicesPreview');
+      var note  = document.getElementById('slicesNote');
+
+      if (!type) {
+        prev.classList.remove('visible');
+        return;
+      }
+
+      var mult = MULTIPLIERS[type] || 1;
+
+      if (isTimeContribution) {
+        /* For TIME we cannot compute exact slices (rate is server-side), so
+           show a qualitative indicator once the user has entered hours. */
+        if (!isNaN(qty) && qty > 0) {
+          document.getElementById('slicesValue').textContent = qty + ' hr × £(bespoke rate) × ' + mult;
+          note.textContent = '— exact total calculated server-side';
+          prev.classList.add('visible');
+        } else {
+          prev.classList.remove('visible');
+        }
+      } else {
+        var base = parseFloat(document.getElementById('baseValue').value);
+        if (!isNaN(base) && base > 0 && !isNaN(qty) && qty > 0) {
+          var slices = Math.round((mult * base * qty) * 100) / 100;
+          document.getElementById('slicesValue').textContent =
+            slices.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          note.textContent = '(BaseValue × Quantity × Multiplier)';
+          prev.classList.add('visible');
+        } else {
+          prev.classList.remove('visible');
+        }
+      }
+    }
+
+    /* ─── Contribution type change handler ──────────────────────────────────── */
+    document.getElementById('contributionType').addEventListener('change', function () {
+      if (this.value) setFieldError('contributionType', 'typeError', false);
+      applyTypeMode(this.value);
+    });
+
+    /* ─── Live preview triggers ─────────────────────────────────────────────── */
+    ['baseValue', 'quantity'].forEach(function (id) {
+      document.getElementById(id).addEventListener('change', updateSlicesPreview);
+      document.getElementById(id).addEventListener('input',  updateSlicesPreview);
+    });
+
+    /* ─── Live clear-error on correction ───────────────────────────────────── */
+    document.getElementById('contributorSelect').addEventListener('change', function () {
+      if (this.value) setFieldError('contributorSelect', 'contributorError', false);
+    });
+    document.getElementById('baseValue').addEventListener('input', function () {
+      if (parseFloat(this.value) > 0) setFieldError('baseValue', 'baseValueError', false);
+    });
+    document.getElementById('quantity').addEventListener('input', function () {
+      if (parseFloat(this.value) > 0) setFieldError('quantity', 'quantityError', false);
+    });
+    document.getElementById('evidenceURL').addEventListener('input', function () {
+      setFieldError('evidenceURL', 'evidenceError', false);
+    });
+
+    /* ─── Cancel ────────────────────────────────────────────────────────────── */
+    document.getElementById('cancelBtn').addEventListener('click', function () {
+      google.script.host.close();
+    });
+
+    /* ─── Form submit ───────────────────────────────────────────────────────── */
+    document.getElementById('recordForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      clearError();
+
+      var sel         = document.getElementById('contributorSelect');
+      var typeEl      = document.getElementById('contributionType');
+      var baseEl      = document.getElementById('baseValue');
+      var qtyEl       = document.getElementById('quantity');
+      var evidenceEl  = document.getElementById('evidenceURL');
+
+      var contributorKey   = sel.value;
+      var contributorName  = sel.value
+        ? sel.options[sel.selectedIndex].getAttribute('data-name') || ''
+        : '';
+      var contributionType = typeEl.value;
+      var quantity         = parseFloat(qtyEl.value);
+      var evidenceURL      = evidenceEl.value.trim();
+      var notes            = document.getElementById('notes').value.trim();
+
+      var valid = true;
+
+      if (!contributorKey) {
+        setFieldError('contributorSelect', 'contributorError', true);
+        valid = false;
+      }
+      if (!contributionType) {
+        setFieldError('contributionType', 'typeError', true);
+        valid = false;
+      }
+
+      /* Base-value validation only applies when NOT a TIME contribution */
+      var baseValue = null;
+      if (!isTimeContribution) {
+        baseValue = parseFloat(baseEl.value);
+        if (isNaN(baseValue) || baseValue <= 0) {
+          setFieldError('baseValue', 'baseValueError', true);
+          valid = false;
+        }
+      }
+
+      if (isNaN(quantity) || quantity <= 0) {
+        setFieldError('quantity', 'quantityError', true);
+        valid = false;
+      }
+      if (evidenceURL && !/^https?:\/\/.+/.test(evidenceURL)) {
+        setFieldError('evidenceURL', 'evidenceError', true);
+        valid = false;
+      }
+
+      if (!valid) {
+        var first = document.querySelector('.invalid');
+        if (first) first.focus();
+        return;
+      }
+
+      setLoading(true);
+
+      /* For TIME contributions, omit baseValue from the payload entirely so
+         processRecordContributionForm knows to use the bespoke rate lookup. */
+      var formData = {
+        contributorKey:   contributorKey,
+        contributorName:  contributorName,
+        contributionType: contributionType,
+        quantity:         quantity,
+        evidenceURL:      evidenceURL,
+        notes:            notes
+      };
+      if (!isTimeContribution) {
+        formData.baseValue = baseValue;
+      }
+
+      google.script.run
+        .withSuccessHandler(onSubmitSuccess)
+        .withFailureHandler(onSubmitFailure)
+        .processRecordContributionForm(formData);
+    });
+
+    /* ─── Success handler ───────────────────────────────────────────────────── */
+    function onSubmitSuccess(result) {
+      setLoading(false);
+      var slices = (result && typeof result.slices === 'number')
+        ? result.slices.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : '—';
+      alert(
+        'Contribution submitted successfully!\n\n' +
+        'Contributor: ' + (result.contributorName || result.contributorKey || '—') + '\n' +
+        'Slices (pending approval): ' + slices + '\n' +
+        'Request ID: ' + (result.requestId || '—')
+      );
+      google.script.host.close();
+    }
+
+    /* ─── Failure handler ───────────────────────────────────────────────────── */
+    function onSubmitFailure(error) {
+      setLoading(false);
+      showError('Submission failed: ' +
+        ((error && error.message) ? error.message : String(error)));
+    }
+
+    /* ─── Bootstrap: populate contributor dropdown on load ──────────────────── */
+    function onContributorsLoaded(contributors) {
+      document.getElementById('pageLoading').classList.add('hidden');
+      document.getElementById('mainContent').style.display = 'block';
+
+      var sel = document.getElementById('contributorSelect');
+
+      if (!contributors || contributors.length === 0) {
+        var opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '— No contributors found (run Initialize System) —';
+        opt.disabled = true;
+        sel.appendChild(opt);
+        document.getElementById('submitBtn').disabled = true;
+        return;
+      }
+
+      /* contributors is [{key, name, email, role, status, display}]
+         Active contributors come first (sorted by backend). */
+      var currentGroup = '';
+      contributors.forEach(function (c) {
+        var group = (c.status === 'Active') ? 'Active' : 'Separated';
+        if (group !== currentGroup) {
+          var og = document.createElement('optgroup');
+          og.label = group;
+          sel.appendChild(og);
+          currentGroup = group;
+        }
+        var opt = document.createElement('option');
+        opt.value = c.key;
+        opt.setAttribute('data-name', c.name);
+        opt.textContent = c.display;
+        sel.lastChild.appendChild(opt);
+      });
+
+      sel.focus();
+    }
+
+    function onContributorsLoadFailure(error) {
+      document.getElementById('pageLoading').classList.add('hidden');
+      document.getElementById('mainContent').style.display = 'block';
+      showError('Failed to load contributors: ' +
+        ((error && error.message) ? error.message : String(error)));
+      document.getElementById('submitBtn').disabled = true;
+    }
+
+    window.addEventListener('load', function () {
+      google.script.run
+        .withSuccessHandler(onContributorsLoaded)
+        .withFailureHandler(onContributorsLoadFailure)
+        .getContributorsList();
+    });
+  </script>
+</body>
+</html>

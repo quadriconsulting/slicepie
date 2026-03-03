@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Review Contributions</title>
+  <style>
+    /* ── Reset & base ───────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary:      #1a73e8;
+      --primary-dark: #1557b0;
+      --approve:      #188038;
+      --approve-bg:   #e6f4ea;
+      --reject:       #c5221f;
+      --reject-bg:    #fce8e6;
+      --skip-bg:      #f8f9fa;
+      --surface:      #ffffff;
+      --bg:           #f1f3f4;
+      --border:       #dadce0;
+      --text:         #202124;
+      --text-muted:   #5f6368;
+      --radius:       8px;
+      --shadow:       0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.08);
+    }
+
+    body {
+      font-family: 'Google Sans', Roboto, Arial, sans-serif;
+      font-size: 13px;
+      color: var(--text);
+      background: var(--bg);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+    .header {
+      background: var(--primary);
+      color: #fff;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,.2);
+    }
+    .header svg { flex-shrink: 0; }
+    .header h1  { font-size: 17px; font-weight: 500; }
+    .header-badge {
+      margin-left: auto;
+      background: rgba(255,255,255,.2);
+      border-radius: 12px;
+      padding: 2px 10px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* ── Banner (error / info) ───────────────────────────────────────────── */
+    .banner {
+      display: none;
+      padding: 10px 20px;
+      font-size: 13px;
+      border-left: 4px solid transparent;
+      flex-shrink: 0;
+    }
+    .banner.error   { display: flex; background: #fce8e6; border-color: var(--reject); color: var(--reject); }
+    .banner.info    { display: flex; background: #e8f0fe; border-color: var(--primary); color: var(--primary-dark); }
+    .banner.success { display: flex; background: var(--approve-bg); border-color: var(--approve); color: var(--approve); }
+    .banner svg     { flex-shrink: 0; margin-right: 8px; margin-top: 1px; }
+
+    /* ── Loading overlay ────────────────────────────────────────────────── */
+    .loading-overlay {
+      position: absolute; inset: 0;
+      background: rgba(255,255,255,.85);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 14px;
+      z-index: 100;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    .loading-overlay.hidden { display: none; }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Empty state ────────────────────────────────────────────────────── */
+    .empty-state {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      gap: 12px;
+      color: var(--text-muted);
+      text-align: center;
+      padding: 24px;
+    }
+    .empty-state.visible { display: flex; }
+    .empty-state svg { opacity: .4; }
+    .empty-state p   { font-size: 14px; }
+
+    /* ── Main content area ───────────────────────────────────────────────── */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 16px;
+      position: relative;
+    }
+
+    /* ── Summary strip ───────────────────────────────────────────────────── */
+    .summary-strip {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .summary-chip {
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--border);
+      color: var(--text-muted);
+    }
+    .summary-chip.approve { background: var(--approve-bg); color: var(--approve); }
+    .summary-chip.reject  { background: var(--reject-bg);  color: var(--reject);  }
+    .summary-chip.skip    { background: #f8f9fa;            color: #757575;        }
+
+    /* ── Table ───────────────────────────────────────────────────────────── */
+    .table-wrap {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+    }
+    thead th {
+      background: #f8f9fa;
+      padding: 10px 12px;
+      text-align: left;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    thead th.col-action { text-align: center; min-width: 220px; }
+    tbody tr { border-bottom: 1px solid var(--border); }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr.row-approve { background: var(--approve-bg); }
+    tbody tr.row-reject  { background: var(--reject-bg);  }
+    tbody tr.row-skip    { background: var(--skip-bg);    }
+    tbody td {
+      padding: 10px 12px;
+      vertical-align: top;
+    }
+    .contributor-name { font-weight: 500; color: var(--text); }
+    .type-badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #e8f0fe;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: .3px;
+    }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .status-badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #fff3e0;
+      color: #e65100;
+    }
+    .status-badge.pending-quorum { background: #fce4ec; color: #ad1457; }
+
+    /* ── Radio action buttons ────────────────────────────────────────────── */
+    .action-group {
+      display: flex;
+      gap: 4px;
+      justify-content: center;
+      flex-wrap: nowrap;
+    }
+    .action-label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 5px 10px;
+      border-radius: 4px;
+      border: 1.5px solid var(--border);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: background .15s, border-color .15s;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .action-label input[type="radio"] { display: none; }
+    .action-label.approve-lbl { color: var(--approve); }
+    .action-label.reject-lbl  { color: var(--reject);  }
+    .action-label.skip-lbl    { color: var(--text-muted); }
+    .action-label.approve-lbl:has(input:checked) {
+      background: var(--approve-bg); border-color: var(--approve);
+    }
+    .action-label.reject-lbl:has(input:checked) {
+      background: var(--reject-bg); border-color: var(--reject);
+    }
+    .action-label.skip-lbl:has(input:checked) {
+      background: #f1f3f4; border-color: #bdbdbd;
+    }
+
+    /* ── Rejection reason textarea ───────────────────────────────────────── */
+    .reason-row td { padding-top: 0 !important; padding-bottom: 10px; }
+    .reason-wrap {
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .reason-wrap.visible { display: flex; }
+    .reason-wrap textarea {
+      width: 100%;
+      min-height: 56px;
+      padding: 8px 10px;
+      border: 1.5px solid var(--border);
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 12.5px;
+      resize: vertical;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .reason-wrap textarea:focus { border-color: var(--primary); }
+    .reason-wrap textarea.invalid { border-color: var(--reject); }
+    .reason-error {
+      color: var(--reject);
+      font-size: 11.5px;
+      display: none;
+    }
+    .reason-error.visible { display: block; }
+
+    /* ── Footer ─────────────────────────────────────────────────────────── */
+    .footer {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 20px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background .15s, box-shadow .15s;
+    }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .btn-cancel   { background: transparent; color: var(--text-muted); border: 1.5px solid var(--border); }
+    .btn-cancel:hover:not(:disabled)  { background: var(--bg); }
+    .btn-primary  { background: var(--primary); color: #fff; box-shadow: var(--shadow); }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
+    .btn-spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: none;
+    }
+    .btn-primary.loading .btn-spinner { display: inline-block; }
+    .btn-primary.loading .btn-text    { opacity: .7; }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="header">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" fill="white"/>
+    </svg>
+    <h1>Review Contributions</h1>
+    <span class="header-badge" id="pendingBadge">Loading…</span>
+  </div>
+
+  <!-- Banner -->
+  <div class="banner" id="banner" role="alert">
+    <svg id="bannerIcon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+    </svg>
+    <span id="bannerText"></span>
+  </div>
+
+  <!-- Main content -->
+  <div class="content" id="mainContent">
+
+    <!-- Loading overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="spinner"></div>
+      <span id="loadingText">Loading pending contributions…</span>
+    </div>
+
+    <!-- Empty state -->
+    <div class="empty-state" id="emptyState">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="#9e9e9e">
+        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+      </svg>
+      <p><strong>No pending contributions</strong></p>
+      <p>All contributions have been reviewed or no contributions have been submitted yet.</p>
+    </div>
+
+    <!-- Summary strip (shown when rows exist) -->
+    <div class="summary-strip" id="summaryStrip" style="display:none">
+      <span class="summary-chip" id="chipTotal"></span>
+      <span class="summary-chip approve" id="chipApprove" style="display:none"></span>
+      <span class="summary-chip reject"  id="chipReject"  style="display:none"></span>
+      <span class="summary-chip skip"    id="chipSkip"    style="display:none"></span>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap" id="tableWrap" style="display:none">
+      <table id="reviewTable" aria-label="Pending contributions">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Contributor</th>
+            <th>Type</th>
+            <th class="num">Base Value</th>
+            <th class="num">Qty</th>
+            <th class="num">Slices</th>
+            <th>Status</th>
+            <th class="col-action">Decision</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+
+  </div><!-- /.content -->
+
+  <!-- Footer -->
+  <div class="footer">
+    <button class="btn btn-cancel" id="btnCancel" onclick="handleCancel()">Cancel</button>
+    <button class="btn btn-primary" id="btnSubmit" disabled onclick="handleSubmit()">
+      <div class="btn-spinner"></div>
+      <span class="btn-text">Submit Reviews</span>
+    </button>
+  </div>
+
+<script>
+/* ── State ──────────────────────────────────────────────────────────────── */
+var pendingRows = [];    // raw array returned by getPendingContributions_
+var rowState    = {};    // rowState[rowNum] = { action, reasonEl }
+
+/* ── Helpers ────────────────────────────────────────────────────────────── */
+function fmt(n) {
+  return Number(n).toLocaleString('en-GB', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function showBanner(type, msg) {
+  var b = document.getElementById('banner');
+  var t = document.getElementById('bannerText');
+  b.className = 'banner ' + type;
+  t.textContent = msg;
+}
+
+function hideBanner() {
+  document.getElementById('banner').className = 'banner';
+}
+
+function setLoading(visible, text) {
+  var overlay = document.getElementById('loadingOverlay');
+  if (visible) {
+    document.getElementById('loadingText').textContent = text || 'Loading…';
+    overlay.classList.remove('hidden');
+  } else {
+    overlay.classList.add('hidden');
+  }
+}
+
+/* ── Build table ────────────────────────────────────────────────────────── */
+function buildTable(rows) {
+  var tbody = document.getElementById('tableBody');
+  tbody.innerHTML = '';
+  rowState = {};
+
+  if (!rows || rows.length === 0) {
+    document.getElementById('emptyState').classList.add('visible');
+    document.getElementById('tableWrap').style.display  = 'none';
+    document.getElementById('summaryStrip').style.display = 'none';
+    document.getElementById('pendingBadge').textContent = '0 pending';
+    document.getElementById('btnSubmit').disabled = true;
+    return;
+  }
+
+  document.getElementById('emptyState').classList.remove('visible');
+  document.getElementById('tableWrap').style.display   = 'block';
+  document.getElementById('summaryStrip').style.display = 'flex';
+  document.getElementById('pendingBadge').textContent   = rows.length + ' pending';
+  document.getElementById('chipTotal').textContent      = rows.length + ' total';
+  document.getElementById('btnSubmit').disabled = false;
+
+  rows.forEach(function(row, idx) {
+    var rn   = row.rowNum;
+    var name = esc(row.contributorName  || '—');
+    var type = esc(row.contributionType || '—');
+    var bv   = fmt(row.baseValue   || 0);
+    var qty  = fmt(row.quantity    || 0);
+    var sl   = fmt(row.slicesAwarded || 0);
+    var st   = String(row.status   || '').toUpperCase();
+    var stBadge = st === 'PENDING_QUORUM'
+      ? '<span class="status-badge pending-quorum">QUORUM</span>'
+      : '<span class="status-badge">PENDING</span>';
+
+    var grpId     = 'ag_' + rn;
+    var reasonId  = 're_' + rn;
+    var errId     = 'er_' + rn;
+    var reasonRow = 'rrow_' + rn;
+    var dataRow   = 'drow_' + rn;
+
+    // Data row
+    var tr = document.createElement('tr');
+    tr.id        = dataRow;
+    tr.className = 'row-skip';
+    tr.innerHTML =
+      '<td>' + (idx + 1) + '</td>' +
+      '<td><span class="contributor-name">' + name + '</span></td>' +
+      '<td><span class="type-badge">' + type + '</span></td>' +
+      '<td class="num">£' + bv + '</td>' +
+      '<td class="num">' + qty + '</td>' +
+      '<td class="num">' + sl + '</td>' +
+      '<td>' + stBadge + '</td>' +
+      '<td class="col-action">' +
+        '<div class="action-group" role="group" aria-label="Decision for ' + name + '">' +
+          '<label class="action-label approve-lbl">' +
+            '<input type="radio" name="' + grpId + '" value="APPROVE" onchange="onActionChange(' + rn + ',\'APPROVE\')">' +
+            '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>' +
+            'Approve' +
+          '</label>' +
+          '<label class="action-label reject-lbl">' +
+            '<input type="radio" name="' + grpId + '" value="REJECT" onchange="onActionChange(' + rn + ',\'REJECT\')">' +
+            '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>' +
+            'Reject' +
+          '</label>' +
+          '<label class="action-label skip-lbl">' +
+            '<input type="radio" name="' + grpId + '" value="SKIP" onchange="onActionChange(' + rn + ',\'SKIP\')" checked>' +
+            '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>' +
+            'Skip' +
+          '</label>' +
+        '</div>' +
+      '</td>';
+    tbody.appendChild(tr);
+
+    // Reason row (hidden until REJECT selected)
+    var rr = document.createElement('tr');
+    rr.id = reasonRow;
+    rr.className = 'reason-row row-skip';
+    rr.innerHTML =
+      '<td colspan="8" style="padding-top:0">' +
+        '<div class="reason-wrap" id="' + 're_wrap_' + rn + '">' +
+          '<textarea id="' + reasonId + '" placeholder="Rejection reason (required, min 3 characters)…" ' +
+            'maxlength="1000" oninput="onReasonInput(' + rn + ')"></textarea>' +
+          '<span class="reason-error" id="' + errId + '">Please provide a rejection reason (min 3 characters).</span>' +
+        '</div>' +
+      '</td>';
+    tbody.appendChild(rr);
+
+    rowState[rn] = { action: 'SKIP' };
+  });
+
+  updateSummaryChips();
+}
+
+/* ── Action change handler ───────────────────────────────────────────────── */
+function onActionChange(rowNum, action) {
+  rowState[rowNum].action = action;
+
+  var dataRow   = document.getElementById('drow_' + rowNum);
+  var reasonRow = document.getElementById('rrow_' + rowNum);
+  var wrapEl    = document.getElementById('re_wrap_' + rowNum);
+
+  // Update row colour
+  dataRow.className   = 'row-' + action.toLowerCase();
+  reasonRow.className = 'reason-row row-' + action.toLowerCase();
+
+  // Show/hide reason
+  if (action === 'REJECT') {
+    wrapEl.classList.add('visible');
+    reasonRow.style.display = '';
+  } else {
+    wrapEl.classList.remove('visible');
+    reasonRow.style.display = 'none';
+    // Clear any validation state
+    var ta  = document.getElementById('re_' + rowNum);
+    var err = document.getElementById('er_' + rowNum);
+    if (ta)  ta.classList.remove('invalid');
+    if (err) err.classList.remove('visible');
+  }
+
+  updateSummaryChips();
+}
+
+/* ── Reason input handler ────────────────────────────────────────────────── */
+function onReasonInput(rowNum) {
+  var ta  = document.getElementById('re_' + rowNum);
+  var err = document.getElementById('er_' + rowNum);
+  if (!ta || !err) return;
+  var ok = ta.value.trim().length >= 3;
+  ta.classList.toggle('invalid', !ok);
+  err.classList.toggle('visible', !ok);
+}
+
+/* ── Summary chips ───────────────────────────────────────────────────────── */
+function updateSummaryChips() {
+  var counts = { APPROVE: 0, REJECT: 0, SKIP: 0 };
+  Object.values(rowState).forEach(function(s) {
+    counts[s.action] = (counts[s.action] || 0) + 1;
+  });
+
+  var ca = document.getElementById('chipApprove');
+  var cr = document.getElementById('chipReject');
+  var cs = document.getElementById('chipSkip');
+
+  if (counts.APPROVE > 0) { ca.textContent = counts.APPROVE + ' approve'; ca.style.display = 'inline-block'; }
+  else ca.style.display = 'none';
+
+  if (counts.REJECT > 0)  { cr.textContent = counts.REJECT  + ' reject';  cr.style.display = 'inline-block'; }
+  else cr.style.display = 'none';
+
+  if (counts.SKIP > 0)    { cs.textContent = counts.SKIP    + ' skip';    cs.style.display = 'inline-block'; }
+  else cs.style.display = 'none';
+}
+
+/* ── Validation ─────────────────────────────────────────────────────────── */
+function validateAll() {
+  var valid = true;
+  Object.keys(rowState).forEach(function(rn) {
+    if (rowState[rn].action === 'REJECT') {
+      var ta  = document.getElementById('re_' + rn);
+      var err = document.getElementById('er_' + rn);
+      if (!ta || ta.value.trim().length < 3) {
+        if (ta)  ta.classList.add('invalid');
+        if (err) err.classList.add('visible');
+        valid = false;
+      }
+    }
+  });
+  return valid;
+}
+
+/* ── Submit ─────────────────────────────────────────────────────────────── */
+function handleSubmit() {
+  hideBanner();
+
+  if (!validateAll()) {
+    showBanner('error', 'Please provide a rejection reason (min 3 characters) for all rows marked as Reject.');
+    return;
+  }
+
+  // Build payload — skip rows with action SKIP that have no decision needed
+  var payload = [];
+  Object.keys(rowState).forEach(function(rn) {
+    var s   = rowState[rn];
+    var ta  = document.getElementById('re_' + rn);
+    payload.push({
+      rowNum: Number(rn),
+      action: s.action,
+      reason: (s.action === 'REJECT' && ta) ? ta.value.trim() : ''
+    });
+  });
+
+  var actioned = payload.filter(function(p) { return p.action !== 'SKIP'; });
+  if (actioned.length === 0) {
+    showBanner('info', 'No actions selected. Choose Approve or Reject for at least one row, or click Cancel.');
+    return;
+  }
+
+  // Disable UI
+  var btn = document.getElementById('btnSubmit');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  document.getElementById('btnCancel').disabled = true;
+  setLoading(true, 'Processing ' + actioned.length + ' decision(s)…');
+
+  google.script.run
+    .withSuccessHandler(onSubmitSuccess)
+    .withFailureHandler(onSubmitFailure)
+    .processBulkReviews(payload);
+}
+
+/* ── Submit success ─────────────────────────────────────────────────────── */
+function onSubmitSuccess(result) {
+  setLoading(false);
+
+  var parts = [];
+  if (result.approved > 0) parts.push(result.approved + ' approved');
+  if (result.rejected > 0) parts.push(result.rejected + ' rejected');
+  if (result.skipped  > 0) parts.push(result.skipped  + ' skipped');
+  var summary = parts.join(', ') || 'No changes';
+
+  if (result.errors && result.errors.length > 0) {
+    showBanner('error',
+      summary + '. ' + result.errors.length + ' error(s): ' + result.errors.join(' | '));
+    // Re-enable so user can retry
+    var btn = document.getElementById('btnSubmit');
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    document.getElementById('btnCancel').disabled = false;
+  } else {
+    showBanner('success', 'Done — ' + summary + '. The dialog will close shortly.');
+    setTimeout(function() { google.script.host.close(); }, 2200);
+  }
+}
+
+/* ── Submit failure ─────────────────────────────────────────────────────── */
+function onSubmitFailure(err) {
+  setLoading(false);
+  showBanner('error', 'Submission failed: ' + (err && err.message ? err.message : String(err)));
+  var btn = document.getElementById('btnSubmit');
+  btn.disabled = false;
+  btn.classList.remove('loading');
+  document.getElementById('btnCancel').disabled = false;
+}
+
+/* ── Cancel ─────────────────────────────────────────────────────────────── */
+function handleCancel() {
+  google.script.host.close();
+}
+
+/* ── Load rows on init ───────────────────────────────────────────────────── */
+function onRowsLoaded(rows) {
+  pendingRows = rows || [];
+  setLoading(false);
+  buildTable(pendingRows);
+}
+
+function onRowsLoadFailure(err) {
+  setLoading(false);
+  document.getElementById('emptyState').classList.add('visible');
+  document.getElementById('pendingBadge').textContent = 'Error';
+  var msg = (err && err.message) ? err.message : String(err);
+  showBanner('error', 'Failed to load contributions: ' + msg);
+  // alert ensures the error surfaces even if the banner is off-screen
+  alert('Failed to load pending contributions:\n\n' + msg);
+}
+
+window.addEventListener('load', function() {
+  google.script.run
+    .withSuccessHandler(onRowsLoaded)
+    .withFailureHandler(onRowsLoadFailure)
+    .getPendingContributions();
+});
+</script>
+</body>
+</html>
